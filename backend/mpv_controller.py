@@ -71,8 +71,11 @@ class MpvController:
         )
 
         # 2. Wait for socket to appear
-        for _ in range(20): # 2 seconds timeout
+        # Increased timeout to 5 seconds for slower Pis
+        for _ in range(50): 
             if Path(self.socket_path).exists():
+                # Give MPV a moment to actually bind to the socket
+                await asyncio.sleep(0.5)
                 break
             await asyncio.sleep(0.1)
         else:
