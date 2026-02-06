@@ -13,7 +13,7 @@ xset s off -dpms 2>/dev/null || true
 
 # Wait for Backend
 echo "Waiting for HMC Backend..."
-until curl -s $URL/player/status > /dev/null; do
+until curl -s $URL/player/state > /dev/null; do
     sleep 1
 done
 

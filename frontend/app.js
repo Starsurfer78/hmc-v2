@@ -315,6 +315,60 @@ function setupPlayerControls() {
     document.getElementById('btn-stop').onclick = () => fetch(`${API_BASE}/player/stop`, { method: 'POST' });
     document.getElementById('btn-next').onclick = () => fetch(`${API_BASE}/player/next`, { method: 'POST' });
     document.getElementById('btn-prev').onclick = () => fetch(`${API_BASE}/player/previous`, { method: 'POST' });
+
+    // Seek Functionality
+    const progressBar = document.querySelector('.progress-bar-bg');
+    if (progressBar) {
+        progressBar.onclick = async (e) => {
+            const rect = progressBar.getBoundingClientRect();
+            const percent = (e.clientX - rect.left) / rect.width;
+            
+            try {
+                const state = await fetch(`${API_BASE}/player/state`).then(r => r.json());
+                if (state.duration > 0) {
+                    const seekTo = state.duration * percent;
+                    await fetch(`${API_BASE}/player/seek`, { 
+                        method: 'POST', 
+                        headers: {'Content-Type': 'application/json'}, 
+                        body: JSON.stringify({position: seekTo}) 
+                    });
+                    updatePlayerState();
+                }
+            } catch (e) {
+                console.error("Seek failed", e);
+            }
+        };
+    }
+
+    // Volume Control (Hidden logic, can be exposed via UI if needed)
+    // For now, we add a simple slider to the footer via JS as requested
+    const footerControls = document.querySelector('.player-controls');
+    if (footerControls && !document.getElementById('volume-slider')) {
+        const volContainer = document.createElement('div');
+        volContainer.style.display = 'flex';
+        volContainer.style.alignItems = 'center';
+        volContainer.style.marginLeft = '1rem';
+        
+        const volSlider = document.createElement('input');
+        volSlider.id = 'volume-slider';
+        volSlider.type = 'range';
+        volSlider.min = 0;
+        volSlider.max = 60; // Max from policy
+        volSlider.value = 60;
+        volSlider.style.width = '80px';
+        volSlider.style.accentColor = 'var(--accent-color)';
+        
+        volSlider.onchange = async (e) => {
+             await fetch(`${API_BASE}/player/volume`, { 
+                method: 'POST', 
+                headers: {'Content-Type': 'application/json'}, 
+                body: JSON.stringify({volume: parseInt(e.target.value)}) 
+            });
+        };
+
+        volContainer.appendChild(volSlider);
+        footerControls.appendChild(volContainer);
+    }
 }
 
 async function updatePlayerState() {

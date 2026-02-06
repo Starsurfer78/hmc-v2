@@ -24,6 +24,8 @@ async def lifespan(app: FastAPI):
     # Start Player if not mock (Mock starts on demand/lazily for now, but good practice to explicit start)
     if player.audio_device != "mock":
         await player.start()
+        # Wait for IPC to be ready
+        await asyncio.sleep(1)
         
     yield
     # Shutdown
@@ -204,6 +206,27 @@ async def next_track():
 async def previous_track():
     await player.previous_track()
     return await player.get_state()
+
+@app.post("/player/seek")
+async def seek(state: dict):
+    """Seek to position in seconds. Expects JSON: {"position": float}"""
+    position = state.get("position")
+    if position is None:
+        raise HTTPException(400, "Position required")
+    await player.seek(position)
+    return await player.get_state()
+
+@app.post("/player/volume")
+async def set_volume(state: dict):
+    """Set volume (0-max_volume). Expects JSON: {"volume": int}"""
+    volume = state.get("volume")
+    if volume is None:
+         raise HTTPException(400, "Volume required")
+    
+    policy = get_policy()
+    clamped = min(volume, policy.max_volume)
+    await player.set_volume(clamped)
+    return {"volume": clamped}
 
 @app.get("/player/state")
 async def get_state():

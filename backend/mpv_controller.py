@@ -82,6 +82,7 @@ class MpvController:
 
         # 3. Start IPC Listener
         self._ipc_task = asyncio.create_task(self._ipc_loop())
+        self._monitor_task = asyncio.create_task(self._monitor_process())
         self.state = PlaybackState.IDLE
         
         # 4. Observe properties
@@ -190,6 +191,18 @@ class MpvController:
              return
         await self._send_command(["playlist-prev"])
 
+    async def seek(self, position: float):
+        """Seek to absolute position"""
+        if self.audio_device == "mock":
+            self.position = position
+            return
+        await self._send_command(["seek", str(position), "absolute"])
+
+    async def set_volume(self, volume: int):
+        if self.audio_device == "mock":
+            return
+        await self._send_command(["set_property", "volume", volume])
+
     async def get_state(self) -> dict:
         return {
             "state": self.state,
@@ -222,8 +235,33 @@ class MpvController:
             return None
         return None
 
+    async def _monitor_process(self):
+        """Monitor MPV process and restart if crashed"""
+        while not self._shutdown_event.is_set():
+            if self.process and self.process.poll() is not None:
+                # Process died
+                print("⚠️ MPV Process died, restarting...")
+                self.state = PlaybackState.ERROR
+                self.process = None
+                
+                # Attempt restart with current playlist
+                if self.current_playlist:
+                    await asyncio.sleep(2)
+                    try:
+                        await self.play_album(self.current_playlist, self.current_track_index)
+                    except Exception as e:
+                        print(f"❌ Restart failed: {e}")
+            
+            await asyncio.sleep(1)
+
     async def _ipc_loop(self):
         """Continuous loop to read events from MPV socket."""
+        # Wait for socket to appear initially
+        for _ in range(30):  # 3 seconds
+            if Path(self.socket_path).exists():
+                break
+            await asyncio.sleep(0.1)
+
         while not self._shutdown_event.is_set():
             try:
                 reader, writer = await asyncio.open_unix_connection(self.socket_path)
