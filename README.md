@@ -36,7 +36,7 @@ Diese Anleitung gilt für ein frisches **Raspberry Pi OS (Bookworm / Trixie)**.
 ### 1. Projekt klonen
 ```bash
 cd /home/pi
-git clone <DEIN_REPO_URL> hmc
+git clone https://github.com/Starsurfer78/hmc-v2 hmc
 cd hmc
 ```
 
