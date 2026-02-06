@@ -89,11 +89,8 @@ class MpvController:
         self.state = PlaybackState.IDLE
         
         # 4. Observe properties
-        await self._send_command(["observe_property", 1, "pause"])
-        await self._send_command(["observe_property", 2, "time-pos"])
-        await self._send_command(["observe_property", 3, "duration"])
-        await self._send_command(["observe_property", 4, "playlist-pos"])
-        await self._send_command(["observe_property", 5, "idle-active"])
+        # Moved to _ipc_loop to ensure they are registered on the listening connection
+        pass
 
     async def stop(self):
         """Stops the MPV process and cleans up."""
@@ -130,6 +127,21 @@ class MpvController:
         """Plays a list of tracks."""
         if not tracks:
             raise ValueError("No tracks provided")
+
+        # Idempotency check: If playing same playlist and same start index, do nothing (or just resume)
+        # We compare the first track URL as a simple signature
+        if (self.state == PlaybackState.PLAYING and 
+            self.current_playlist and 
+            len(tracks) == len(self.current_playlist) and 
+            tracks[0]['url'] == self.current_playlist[0]['url'] and
+            self.current_track_index == start_index):
+            
+            print("Ignoring request to restart currently playing album/track.")
+            return {
+                "status": "playing",
+                "tracks": len(tracks),
+                "current": tracks[start_index]
+            }
 
         # Ensure MPV is running
         if not self.process and self.audio_device != "mock":
@@ -277,6 +289,18 @@ class MpvController:
             try:
                 reader, writer = await asyncio.open_unix_connection(self.socket_path)
                 
+                # Register observers on THIS persistent connection
+                observers = [
+                    '{"command": ["observe_property", 1, "pause"]}\n',
+                    '{"command": ["observe_property", 2, "time-pos"]}\n',
+                    '{"command": ["observe_property", 3, "duration"]}\n',
+                    '{"command": ["observe_property", 4, "playlist-pos"]}\n',
+                    '{"command": ["observe_property", 5, "idle-active"]}\n'
+                ]
+                for obs in observers:
+                    writer.write(obs.encode())
+                await writer.drain()
+
                 # We stay connected to receive events
                 while not self._shutdown_event.is_set():
                     line = await reader.readline()
