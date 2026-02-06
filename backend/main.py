@@ -99,7 +99,7 @@ async def root():
     return FileResponse(os.path.join(frontend_dir, "index.html"))
 
 @app.get("/libraries", response_model=List[Library])
-async def get_libraries(user_id: str = "jonas"):
+async def get_libraries(user_id: Optional[str] = None):
     policy = get_policy(user_id)
     all_libs = await jellyfin.get_libraries()
     
@@ -111,7 +111,7 @@ async def get_libraries(user_id: str = "jonas"):
     return allowed
 
 @app.get("/library/{library_id}/artists", response_model=List[Artist])
-async def get_artists(library_id: str, user_id: str = "jonas"):
+async def get_artists(library_id: str, user_id: Optional[str] = None):
     policy = get_policy(user_id)
     
     if library_id not in policy.allowed_libraries:

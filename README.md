@@ -29,85 +29,59 @@ Das System ist explizit als **Audio-Endgerät** für Kinder (ca. 4–10 Jahre) k
 
 ---
 
-## 🚀 Installation (Schritt-für-Schritt)
+## 🚀 Installation (Schnellstart)
 
-Diese Anleitung geht von einem frischen **Raspberry Pi OS (Bookworm / Trixie)** aus.
+Diese Anleitung gilt für ein frisches **Raspberry Pi OS (Bookworm / Trixie)**.
 
-### 1. System vorbereiten
-Updates installieren und System-Abhängigkeiten laden:
-```bash
-sudo apt update && sudo apt upgrade -y
-sudo apt install -y git python3-venv mpv chromium unclutter
-```
-
-### 2. Projekt klonen
+### 1. Projekt klonen
 ```bash
 cd /home/pi
 git clone <DEIN_REPO_URL> hmc
 cd hmc
 ```
 
-### 3. Python Environment einrichten
+### 2. Installer starten
+Das Installationsskript installiert alle Abhängigkeiten, richtet das Python-Environment ein, installiert den System-Service und bereitet den Kiosk-Modus vor.
+
 ```bash
-python3 -m venv venv
+chmod +x install.sh
+./install.sh
+```
+
+### 3. Setup-Assistent
+Am Ende der Installation startet automatisch der **Setup-Assistent**. Er führt dich interaktiv durch:
+- Verbindungstest zu Jellyfin
+- Auswahl der erlaubten Bibliotheken (per Checkbox)
+- Audio-Device Auswahl
+
+Falls du die Konfiguration später ändern willst:
+```bash
 source venv/bin/activate
-pip install -r backend/requirements.txt
+python3 setup.py
 ```
 
-### 4. Konfiguration
-Erstelle eine `.env` Datei basierend auf der Vorlage:
+### 4. Neustart
+Nach dem Reboot startet der HMC automatisch im Kiosk-Modus.
 ```bash
-cp .env.example .env
-nano .env
+sudo reboot
 ```
-Passe folgende Werte an:
-- `JELLYFIN_URL`: URL zu deinem Jellyfin Server (z.B. `http://192.168.1.5:8096`)
-- `JELLYFIN_API_KEY`: API Key (in Jellyfin Dashboard erstellen)
-- `JELLYFIN_USER_ID`: User ID des Kindes (aus URL im Browser kopieren)
-- `AUDIO_DEVICE`: ALSA Device Name (z.B. `hw:1,0` für USB Audio, `hw:0,0` für Onboard)
 
-### 5. Autostart einrichten (Backend)
-Damit der HMC-Server beim Booten startet:
+---
 
+## 🔧 Manuelle Anpassungen (Optional)
+
+### Kiosk-Modus (Autostart)
+Das Install-Skript versucht, den Autostart für Labwc oder Wayfire einzurichten. Falls der Browser nicht startet, prüfe die Konfiguration deines Window Managers.
+Das Start-Skript liegt unter: `scripts/start_kiosk.sh`
+
+### Updates
+Um Updates einzuspielen:
 ```bash
-# Service-Datei kopieren
-sudo cp hmc.service /etc/systemd/system/
-
-# Service aktivieren und starten
-sudo systemctl daemon-reload
-sudo systemctl enable hmc.service
-sudo systemctl start hmc.service
-
-# Status prüfen
-sudo systemctl status hmc.service
+cd /home/pi/hmc
+git pull
+./install.sh  # Aktualisiert Abhängigkeiten und Service
+sudo systemctl restart hmc
 ```
-
-### 6. Kiosk-Modus einrichten (Frontend)
-Damit der Browser automatisch im Vollbild startet:
-
-**Option A: Labwc (Standard in neueren Versionen)**
-1. Autostart-Datei erstellen/bearbeiten:
-   ```bash
-   mkdir -p ~/.config/labwc
-   nano ~/.config/labwc/autostart
-   ```
-2. Folgende Zeile einfügen:
-   ```bash
-   chromium --kiosk --noerrdialogs --disable-infobars --check-for-update-interval=31536000 http://localhost:8000
-   ```
-
-**Option B: Wayfire (Ältere Bookworm Versionen)**
-1. Konfiguration bearbeiten:
-   ```bash
-   nano ~/.config/wayfire.ini
-   ```
-2. Am Ende einfügen:
-   ```ini
-   [autostart]
-   chromium = chromium --kiosk --noerrdialogs --disable-infobars --check-for-update-interval=31536000 http://localhost:8000
-   ```
-
-*(Alternativ für X11/Legacy OS: LXDE Autostart anpassen)*
 
 ---
 

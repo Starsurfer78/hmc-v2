@@ -11,14 +11,16 @@ _POLICIES: Dict[str, UserPolicy] = {}
 
 def load_policies():
     """Initializes policies from configuration"""
-    # Default 'jonas' policy from env
+    # Default policy from env
     libs = [lid.strip() for lid in settings.ALLOWED_LIBRARIES.split(",") if lid.strip()]
-    _POLICIES["jonas"] = UserPolicy(
+    _POLICIES[settings.HMC_USER] = UserPolicy(
         allowed_libraries=libs,
         max_volume=60
     )
     print(f"Loaded policies for: {list(_POLICIES.keys())}")
 
-def get_policy(user_id: str = "jonas") -> UserPolicy:
+def get_policy(user_id: Optional[str] = None) -> UserPolicy:
     """Get policy for a specific user"""
+    if user_id is None:
+        user_id = settings.HMC_USER
     return _POLICIES.get(user_id, UserPolicy(allowed_libraries=[], max_volume=0))
