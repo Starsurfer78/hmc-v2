@@ -19,8 +19,36 @@ async function init() {
     setupPlayerControls();
     setupNavigation();
     setupKioskProtection();
+    setupAccentSwitcher();
     loadLibraries();
     setInterval(updatePlayerState, 2000);
+    
+    // Load saved accent
+    const savedAccent = localStorage.getItem('hmc_accent');
+    if (savedAccent) {
+        document.documentElement.style.setProperty('--accent-color', savedAccent);
+    }
+}
+
+function setupAccentSwitcher() {
+    const accents = ['#e5a00d', '#4facfe', '#ff6b6b', '#6bffb3', '#d45d79']; // Orange, Blue, Red, Green, Pink
+    let idx = 0;
+    
+    // Try to find current index
+    const current = localStorage.getItem('hmc_accent');
+    if (current) {
+        const found = accents.indexOf(current);
+        if (found !== -1) idx = found;
+    }
+
+    pageTitle.style.cursor = 'pointer';
+    pageTitle.title = "Farbe wechseln";
+    pageTitle.onclick = () => {
+        idx = (idx + 1) % accents.length;
+        const color = accents[idx];
+        document.documentElement.style.setProperty('--accent-color', color);
+        localStorage.setItem('hmc_accent', color);
+    };
 }
 
 function setupKioskProtection() {
@@ -314,6 +342,59 @@ async function updatePlayerState() {
             iconContainer.innerHTML = '<svg viewBox="0 0 24 24" width="32" height="32" fill="currentColor"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>';
         } else {
             iconContainer.innerHTML = '<svg viewBox="0 0 24 24" width="32" height="32" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>';
+        }
+
+        // Highlight current track in list
+        if (currentView === 'tracks' && state.current_track) {
+            const rows = document.querySelectorAll('.track-row');
+            // Check if current album matches playing album (simple check via currentTracks containing the playing track)
+            // But state.current_track has 'id'. 
+            // We iterate rows and match index from currentTracks
+            
+            rows.forEach((row, index) => {
+                const track = currentTracks[index];
+                if (track && track.id === state.current_track.id) {
+                    row.classList.add('active');
+                    // Optional: Scroll into view if needed, but might be annoying
+                } else {
+                    row.classList.remove('active');
+                }
+            });
+        } else if (currentView === 'tracks') {
+            // clear if no track playing
+             document.querySelectorAll('.track-row').forEach(r => r.classList.remove('active'));
+        }
+
+        // Update Now Playing Info
+        const npContainer = document.querySelector('.now-playing');
+        const npTitle = document.getElementById('np-title');
+        const npArtist = document.getElementById('np-artist');
+
+        if (state.current_track) {
+            npContainer.style.display = 'flex';
+            npTitle.innerText = state.current_track.name || "Unbekannter Titel";
+            npArtist.innerText = state.current_track.artist || "";
+        } else {
+            npContainer.style.display = 'none';
+        }
+
+        // Update Progress Bar
+        const currentTimeEl = document.getElementById('current-time');
+        const totalTimeEl = document.getElementById('total-time');
+        const progressFill = document.getElementById('progress-fill');
+
+        if (state.duration > 0) {
+            const pos = state.position || 0;
+            const dur = state.duration;
+            const percent = Math.min(100, (pos / dur) * 100);
+            
+            progressFill.style.width = `${percent}%`;
+            currentTimeEl.innerText = formatDuration(pos);
+            totalTimeEl.innerText = formatDuration(dur);
+        } else {
+            progressFill.style.width = '0%';
+            currentTimeEl.innerText = "0:00";
+            totalTimeEl.innerText = "0:00";
         }
 
         // Enable buttons

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>HMC v2.1</title>
+    <title>HMC v2.1 FINAL</title>
     <link rel="stylesheet" href="/static/styles.css?v=2.4">
 </head>
 <body>
@@ -31,19 +31,33 @@
         </main>
         
         <footer id="player-controls">
-            <button id="btn-prev" title="Vorheriger">
-                <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>
-            </button>
-            <button id="btn-play-pause" title="Wiedergabe/Pause">
-                <svg id="icon-play" viewBox="0 0 24 24" width="32" height="32" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
-                <!-- Pause icon will be swapped via JS or CSS class later, but for now we keep it simple or handle in JS -->
-            </button>
-            <button id="btn-stop" title="Stopp">
-                <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor"><path d="M6 6h12v12H6z"/></svg>
-            </button>
-            <button id="btn-next" title="Nächster">
-                <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg>
-            </button>
+            <div class="progress-row">
+                <span id="current-time">0:00</span>
+                <div class="progress-bar-bg">
+                    <div class="progress-fill" id="progress-fill"></div>
+                </div>
+                <span id="total-time">0:00</span>
+            </div>
+
+            <div class="controls-row">
+                <div class="now-playing" style="display: none;">
+                    <span class="track-title" id="np-title"></span>
+                    <span class="artist-name" id="np-artist"></span>
+                </div>
+                <button id="btn-prev" title="Vorheriger">
+                    <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>
+                </button>
+                <button id="btn-play-pause" title="Wiedergabe/Pause">
+                    <svg id="icon-play" viewBox="0 0 24 24" width="32" height="32" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+                    <!-- Pause icon will be swapped via JS or CSS class later, but for now we keep it simple or handle in JS -->
+                </button>
+                <button id="btn-stop" title="Stopp">
+                    <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor"><path d="M6 6h12v12H6z"/></svg>
+                </button>
+                <button id="btn-next" title="Nächster">
+                    <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg>
+                </button>
+            </div>
         </footer>
     </div>
     <script src="/static/app.js?v=2.4"></script>

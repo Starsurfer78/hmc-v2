@@ -1,13 +1,13 @@
 :root {
     --bg-main: #121212;
     --bg-card: #1E1E1E;
-    --bg-header: rgba(30, 30, 30, 0.85);
+    --bg-header: rgba(18, 18, 18, 0.6);
     --text-main: #FFFFFF;
     --text-muted: #B3B3B3;
     --accent: #4facfe;
-    --accent-gradient: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+    --accent-color: #e5a00d; /* Plex Orange */
     --shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
-    --radius: 16px;
+    --radius: 20px;
 }
 
 * {
@@ -36,10 +36,10 @@ body {
 
 /* --- Header --- */
 header {
-    height: 64px;
-    background: linear-gradient(180deg, rgba(0,0,0,0.6) 0%, rgba(0,0,0,0) 100%);
-    backdrop-filter: none;
-    -webkit-backdrop-filter: none;
+    height: 56px;
+    background: var(--bg-header);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
     display: flex;
     align-items: center;
     padding: 0 1.5rem;
@@ -53,8 +53,6 @@ header {
     gap: 1rem;
 }
 
-/* redundant main block removed */
-
 .nav-group {
     display: flex;
     gap: 0.5rem;
@@ -62,7 +60,7 @@ header {
 }
 
 header h1 {
-    font-size: 1.2rem;
+    font-size: 1.1rem;
     margin: 0;
     flex: 1;
     white-space: nowrap;
@@ -71,8 +69,7 @@ header h1 {
     text-align: center;
     font-weight: 600;
     color: rgba(255,255,255,0.9);
-    text-transform: uppercase;
-    letter-spacing: 1px;
+    letter-spacing: 0.5px;
 }
 
 #btn-home, #btn-back {
@@ -87,8 +84,8 @@ header h1 {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 40px;
-    height: 40px;
+    width: 36px;
+    height: 36px;
 }
 
 #btn-home:active, #btn-back:active {
@@ -97,12 +94,13 @@ header h1 {
 }
 
 #status {
-    font-size: 0.7rem;
+    font-size: 0.65rem;
     color: rgba(255,255,255,0.6);
     font-weight: 600;
     min-width: 60px;
     text-align: right;
     text-transform: uppercase;
+    opacity: 0.6;
 }
 
 /* --- Main Content --- */
@@ -110,8 +108,8 @@ main {
     flex: 1;
     overflow-y: auto;
     padding: 1.5rem;
-    padding-top: 90px; /* Offset for fixed header (64px + spacing) */
-    padding-bottom: 120px; /* Offset for fixed footer */
+    padding-top: 80px; /* Offset for fixed header */
+    padding-bottom: 150px; /* Offset for fixed footer */
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
     gap: 1.5rem;
@@ -122,7 +120,7 @@ main {
 .card {
     background: linear-gradient(145deg, #252525, #1e1e1e);
     border-radius: var(--radius);
-    padding: 1rem;
+    padding: 0.8rem;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -148,8 +146,8 @@ main {
 }
 
 .card .title {
-    font-size: 0.95rem;
-    font-weight: 500;
+    font-size: 1rem;
+    font-weight: 600;
     text-align: center;
     display: -webkit-box;
     -webkit-line-clamp: 2;
@@ -163,7 +161,7 @@ main {
     width: 100%;
     aspect-ratio: 1;
     background: #333;
-    border-radius: 8px;
+    border-radius: 12px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -191,8 +189,8 @@ main {
 }
 
 .album-header img {
-    width: 250px;
-    height: 250px;
+    width: 280px;
+    height: 280px;
     object-fit: cover;
     border-radius: 12px;
     box-shadow: 0 8px 20px rgba(0,0,0,0.5);
@@ -200,7 +198,8 @@ main {
 }
 
 .album-header h2 {
-    font-size: 1.8rem;
+    font-size: 2rem;
+    font-weight: 700;
     margin: 0.5rem 0;
     text-align: center;
 }
@@ -218,7 +217,22 @@ main {
     align-items: center;
     padding: 1rem 1.5rem;
     border-bottom: 1px solid rgba(255,255,255,0.05);
-    transition: background 0.2s;
+    transition: background 0.2s, color 0.2s;
+}
+
+.track-row.active {
+    background: rgba(255, 255, 255, 0.1);
+    border-left: 4px solid var(--accent-color);
+}
+
+.track-row.active .track-name {
+    color: var(--accent-color);
+    font-weight: 700;
+}
+
+.track-row.active .track-num,
+.track-row.active .track-dur {
+    color: rgba(255,255,255,0.9);
 }
 
 .track-row:last-child {
@@ -247,15 +261,16 @@ main {
 
 /* --- Player Footer --- */
 footer {
-    height: 90px;
+    height: 120px;
     background: #1f1f1f;
-    backdrop-filter: none;
-    -webkit-backdrop-filter: none;
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
     border-top: 1px solid rgba(255, 255, 255, 0.05);
     display: flex;
+    flex-direction: column;
     justify-content: center;
     align-items: center;
-    gap: 1.5rem;
+    gap: 0.5rem;
     z-index: 100;
     padding-bottom: env(safe-area-inset-bottom);
     position: fixed;
@@ -264,6 +279,71 @@ footer {
     right: 0;
     box-shadow: 0 -4px 20px rgba(0,0,0,0.4);
 }
+
+.progress-row {
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+    width: 90%;
+    max-width: 600px;
+    color: var(--text-muted);
+    font-size: 0.75rem;
+    font-variant-numeric: tabular-nums;
+}
+
+.progress-bar-bg {
+    flex: 1;
+    height: 6px;
+    background: rgba(255,255,255,0.1);
+    border-radius: 3px;
+    overflow: hidden;
+    position: relative;
+}
+
+.progress-fill {
+    height: 100%;
+    background: var(--accent-color);
+    width: 0%;
+    border-radius: 3px;
+    transition: width 0.2s linear;
+}
+
+.controls-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 1.5rem;
+    width: 100%;
+    position: relative;
+}
+
+.now-playing {
+    position: absolute;
+    left: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    max-width: 25%;
+    text-align: left;
+}
+
+.now-playing .track-title {
+    font-size: 0.9rem;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: white;
+}
+
+.now-playing .artist-name {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
 
 footer button {
     background: transparent;
@@ -289,7 +369,7 @@ footer button:active {
 #btn-play-pause {
     width: 64px;
     height: 64px;
-    background: #e5a00d; /* Plex Orange-ish Accent */
+    background: var(--accent-color);
     color: #000;
     box-shadow: 0 4px 15px rgba(229, 160, 13, 0.3);
 }
@@ -300,14 +380,11 @@ footer button:active {
     box-shadow: 0 2px 8px rgba(229, 160, 13, 0.3);
 }
 
-/* Override existing main definition to remove duplicate */
-/* (Handled in previous block, but ensuring clean cleanup) */
-
 .btn-play-hero {
-    background: #e5a00d;
+    background: var(--accent-color);
     border: none;
-    padding: 1rem 3rem;
-    border-radius: 4px; /* More rectangular like Plex buttons */
+    padding: 1.2rem 3.5rem;
+    border-radius: 999px;
     color: black;
     font-size: 1.1rem;
     font-weight: 700;
@@ -315,8 +392,7 @@ footer button:active {
     cursor: pointer;
     box-shadow: 0 4px 15px rgba(229, 160, 13, 0.3);
     transition: transform 0.2s, box-shadow 0.2s, background 0.2s;
-    text-transform: uppercase;
-    letter-spacing: 1px;
+    text-transform: none; /* Removed uppercase */
 }
 
 .btn-play-hero:active {
