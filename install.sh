@@ -66,16 +66,40 @@ echo "   Service enabled. Start with: sudo systemctl start hmc"
 echo "🖥️  Setting up Kiosk scripts..."
 chmod +x scripts/start_kiosk.sh
 
-# Detect Display Server (simple check)
-if [ -d "$HOME/.config/wayfire.ini" ]; then
+# Detect Display Server and Configure Autostart
+if [ -f "$HOME/.config/wayfire.ini" ]; then
     echo "   Wayfire (Bookworm) detected."
-    echo "   ⚠️  Manual Step: Add the following to ~/.config/wayfire.ini under [autostart]:"
-    echo "   hmc = $CURRENT_DIR/scripts/start_kiosk.sh"
+    CONFIG_FILE="$HOME/.config/wayfire.ini"
+    
+    # Check if entry already exists
+    if grep -q "hmc =" "$CONFIG_FILE"; then
+        echo "   ✅ Autostart entry already exists in $CONFIG_FILE"
+    else
+        # Ensure [autostart] section exists
+        if ! grep -q "\[autostart\]" "$CONFIG_FILE"; then
+            echo "" >> "$CONFIG_FILE"
+            echo "[autostart]" >> "$CONFIG_FILE"
+        fi
+        
+        # Add entry
+        echo "hmc = $CURRENT_DIR/scripts/start_kiosk.sh" >> "$CONFIG_FILE"
+        echo "   ✅ Added autostart entry to $CONFIG_FILE"
+    fi
+    
 elif [ -d "$HOME/.config/lxsession/LXDE-pi" ]; then
     echo "   LXDE (X11) detected."
-    echo "   ⚠️  Manual Step: Add '@$CURRENT_DIR/scripts/start_kiosk.sh' to ~/.config/lxsession/LXDE-pi/autostart"
+    CONFIG_FILE="$HOME/.config/lxsession/LXDE-pi/autostart"
+    
+    if grep -q "start_kiosk.sh" "$CONFIG_FILE"; then
+        echo "   ✅ Autostart entry already exists in $CONFIG_FILE"
+    else
+        echo "@$CURRENT_DIR/scripts/start_kiosk.sh" >> "$CONFIG_FILE"
+        echo "   ✅ Added autostart entry to $CONFIG_FILE"
+    fi
+    
 else
-    echo "   ⚠️  Could not detect specific autostart method. Please add '$CURRENT_DIR/scripts/start_kiosk.sh' to your window manager's startup."
+    echo "   ⚠️  Could not detect specific autostart method."
+    echo "   Please manually add '$CURRENT_DIR/scripts/start_kiosk.sh' to your window manager's startup."
 fi
 
 # 5. Configuration
