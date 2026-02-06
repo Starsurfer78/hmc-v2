@@ -309,6 +309,49 @@ footer {
     transition: width 0.2s linear;
 }
 
+.volume-row {
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+    width: 90%;
+    max-width: 600px;
+    color: var(--text-muted);
+    font-size: 0.75rem;
+    margin-top: 0.5rem;
+}
+
+.volume-row input[type="range"] {
+    flex: 1;
+    height: 4px;
+    background: rgba(255,255,255,0.1);
+    border-radius: 2px;
+    outline: none;
+    -webkit-appearance: none;
+}
+
+.volume-row input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 16px;
+    height: 16px;
+    background: var(--accent-color);
+    border-radius: 50%;
+    cursor: pointer;
+}
+
+.volume-row input[type="range"]::-moz-range-thumb {
+    width: 16px;
+    height: 16px;
+    background: var(--accent-color);
+    border-radius: 50%;
+    cursor: pointer;
+    border: none;
+}
+
+#volume-value {
+    min-width: 40px;
+    text-align: right;
+}
+
 .controls-row {
     display: flex;
     align-items: center;

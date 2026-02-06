@@ -203,6 +203,14 @@ class MpvController:
             return
         await self._send_command(["set_property", "volume", volume])
 
+    async def get_volume(self) -> int:
+        """Get current volume"""
+        if self.audio_device == "mock":
+            return 60
+        
+        result = await self._send_command(["get_property", "volume"])
+        return int(result.get("data", 60)) if result else 60
+
     async def get_state(self) -> dict:
         return {
             "state": self.state,

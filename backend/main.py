@@ -228,6 +228,12 @@ async def set_volume(state: dict):
     await player.set_volume(clamped)
     return {"volume": clamped}
 
+@app.get("/player/volume")
+async def get_volume():
+    """Get current volume"""
+    vol = await player.get_volume()
+    return {"volume": vol}
+
 @app.get("/player/state")
 async def get_state():
     return await player.get_state()

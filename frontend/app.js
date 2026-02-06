@@ -23,6 +23,19 @@ async function init() {
     loadLibraries();
     setInterval(updatePlayerState, 2000);
     
+    // Load current volume
+    try {
+        const vol = await fetch(`${API_BASE}/player/volume`).then(r => r.json());
+        const slider = document.getElementById('volume-slider');
+        const value = document.getElementById('volume-value');
+        if (slider && value) {
+            slider.value = vol.volume;
+            value.innerText = `${vol.volume}%`;
+        }
+    } catch (e) {
+        console.log('Could not load volume');
+    }
+    
     // Load saved accent
     const savedAccent = localStorage.getItem('hmc_accent');
     if (savedAccent) {
@@ -340,34 +353,30 @@ function setupPlayerControls() {
         };
     }
 
-    // Volume Control (Hidden logic, can be exposed via UI if needed)
-    // For now, we add a simple slider to the footer via JS as requested
-    const footerControls = document.querySelector('.player-controls');
-    if (footerControls && !document.getElementById('volume-slider')) {
-        const volContainer = document.createElement('div');
-        volContainer.style.display = 'flex';
-        volContainer.style.alignItems = 'center';
-        volContainer.style.marginLeft = '1rem';
-        
-        const volSlider = document.createElement('input');
-        volSlider.id = 'volume-slider';
-        volSlider.type = 'range';
-        volSlider.min = 0;
-        volSlider.max = 60; // Max from policy
-        volSlider.value = 60;
-        volSlider.style.width = '80px';
-        volSlider.style.accentColor = 'var(--accent-color)';
-        
-        volSlider.onchange = async (e) => {
-             await fetch(`${API_BASE}/player/volume`, { 
-                method: 'POST', 
-                headers: {'Content-Type': 'application/json'}, 
-                body: JSON.stringify({volume: parseInt(e.target.value)}) 
-            });
+    // Volume Control
+    const volumeSlider = document.getElementById('volume-slider');
+    const volumeValue = document.getElementById('volume-value');
+    
+    if (volumeSlider && volumeValue) {
+        let volumeTimeout;
+        volumeSlider.oninput = (e) => {
+            const vol = parseInt(e.target.value);
+            volumeValue.innerText = `${vol}%`;
+            
+            // Debounce API calls
+            clearTimeout(volumeTimeout);
+            volumeTimeout = setTimeout(async () => {
+                try {
+                    await fetch(`${API_BASE}/player/volume`, { 
+                        method: 'POST', 
+                        headers: {'Content-Type': 'application/json'}, 
+                        body: JSON.stringify({volume: vol}) 
+                    });
+                } catch (e) {
+                    console.error('Volume set failed:', e);
+                }
+            }, 200);
         };
-
-        volContainer.appendChild(volSlider);
-        footerControls.appendChild(volContainer);
     }
 }
 
