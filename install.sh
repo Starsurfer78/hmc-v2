@@ -12,8 +12,15 @@ echo "======================"
 echo "📦 Installing system dependencies..."
 sudo apt-get update
 
+# Detect OS Version
+if [ -f /etc/os-release ]; then
+    . /etc/os-release
+    echo "   OS Detected: $PRETTY_NAME ($VERSION_CODENAME)"
+fi
+
 # Detect correct Chromium package (Bookworm/Trixie/RPi-OS differentiation)
-if apt-cache show chromium-browser > /dev/null 2>&1; then
+# We check if chromium-browser has an installation candidate.
+if apt-cache policy chromium-browser | grep "Candidate:" | grep -v "(none)" > /dev/null 2>&1; then
     CHROMIUM_PKG="chromium-browser"
 else
     CHROMIUM_PKG="chromium"
