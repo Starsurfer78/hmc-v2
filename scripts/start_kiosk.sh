@@ -52,4 +52,10 @@ $BROWSER \
     --check-for-update-interval=31536000 \
     --overscroll-history-navigation=0 \
     --disable-pinch \
+    --disable-features=Translate \
+    --password-store=basic \
+    --no-first-run \
+    --fast \
+    --fast-start \
+    --disable-restore-session-state \
     --app=$URL
