@@ -1,0 +1,16 @@
+[Unit]
+Description=HMC v2.1 (Home Media Console)
+After=network.target sound.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/hmc
+ExecStart=/home/pi/hmc/venv/bin/uvicorn backend.main:app --host 0.0.0.0 --port 8000
+Restart=always
+RestartSec=5
+# Set audio device if needed, otherwise it defaults to config.py default
+# Environment=AUDIO_DEVICE=hw:1,0
+
+[Install]
+WantedBy=multi-user.target
