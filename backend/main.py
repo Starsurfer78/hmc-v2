@@ -10,7 +10,7 @@ import sys
 
 from .config import settings
 from .jellyfin_client import JellyfinClient
-from .player import MPVPlayer
+from .mpv_controller import MpvController, PlaybackState
 from .policies import load_policies, get_policy, UserPolicy
 
 # --- Lifecycle Management ---
@@ -20,6 +20,11 @@ async def lifespan(app: FastAPI):
     print(f"✅ HMC v2.1 Starting...")
     load_policies()
     await jellyfin.start()
+    
+    # Start Player if not mock (Mock starts on demand/lazily for now, but good practice to explicit start)
+    if player.audio_device != "mock":
+        await player.start()
+        
     yield
     # Shutdown
     print(f"🛑 HMC v2.1 Stopping...")
@@ -50,7 +55,7 @@ if sys.platform == "win32":
     audio_device = "mock"
     print("⚠️  Windows detected: Using Mock Player (no audio)")
 
-player = MPVPlayer(
+player = MpvController(
     audio_device=audio_device,
     max_volume=60
 )
@@ -177,23 +182,28 @@ async def play_album(album_id: str, start_track_id: Optional[str] = None):
 
 @app.post("/player/pause")
 async def pause():
-    return await player.pause()
+    await player.pause()
+    return await player.get_state()
 
 @app.post("/player/resume")
 async def resume():
-    return await player.resume()
+    await player.resume()
+    return await player.get_state()
 
 @app.post("/player/stop")
 async def stop():
-    return await player.stop()
+    await player.stop()
+    return await player.get_state()
 
 @app.post("/player/next")
 async def next_track():
-    return await player.next_track()
+    await player.next_track()
+    return await player.get_state()
 
 @app.post("/player/previous")
 async def previous_track():
-    return await player.previous_track()
+    await player.previous_track()
+    return await player.get_state()
 
 @app.get("/player/state")
 async def get_state():

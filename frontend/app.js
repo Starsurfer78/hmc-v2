@@ -18,8 +18,19 @@ const btnBack = document.getElementById('btn-back');
 async function init() {
     setupPlayerControls();
     setupNavigation();
+    setupKioskProtection();
     loadLibraries();
     setInterval(updatePlayerState, 2000);
+}
+
+function setupKioskProtection() {
+    // Block context menu
+    document.addEventListener('contextmenu', e => e.preventDefault());
+    
+    // Block double tap zoom (optional, CSS touch-action is better)
+    document.addEventListener('touchstart', e => {
+        if (e.touches.length > 1) e.preventDefault();
+    }, { passive: false });
 }
 
 function setupNavigation() {
@@ -279,9 +290,23 @@ function setupPlayerControls() {
 }
 
 async function updatePlayerState() {
+    const overlay = document.getElementById('connection-overlay');
     try {
         const state = await fetch(`${API_BASE}/player/state`).then(r => r.json());
-        statusDiv.innerText = `${state.state.toUpperCase()}`;
+        
+        // Hide Overlay
+        if (overlay) overlay.style.display = 'none';
+
+        // Translate State
+        const stateMap = {
+            'idle': 'Bereit',
+            'loading': 'Lade...',
+            'playing': 'Wiedergabe',
+            'paused': 'Pause',
+            'stopped': 'Gestoppt',
+            'error': 'Fehler'
+        };
+        statusDiv.innerText = stateMap[state.state] || state.state.toUpperCase();
         
         // Update Play/Pause Icon
         const iconContainer = document.getElementById('btn-play-pause');
@@ -298,8 +323,16 @@ async function updatePlayerState() {
             b.style.pointerEvents = 'auto';
         });
 
+        // Highlight current track if in track view
+        if (currentView === 'track-detail' && currentTrack && state.current_track) {
+            // Optional: Check if playing track matches current displayed track
+        }
+
     } catch (e) {
         statusDiv.innerText = "OFFLINE";
+        // Show Overlay
+        if (overlay) overlay.style.display = 'flex';
+        
         // Disable buttons
         document.querySelectorAll('footer button').forEach(b => {
             b.disabled = true;
