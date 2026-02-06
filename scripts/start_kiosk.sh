@@ -3,7 +3,17 @@
 # HMC v2.1 Kiosk Starter
 # Waits for backend and starts Chromium in Kiosk mode
 
+# Log output for debugging
+exec > >(tee -a /tmp/hmc_kiosk.log) 2>&1
+echo "🚀 Kiosk Script started at $(date)"
+
 URL="http://localhost:8000"
+
+# Set DISPLAY explicitly if missing (common in some autostart methods)
+if [ -z "$DISPLAY" ]; then
+    export DISPLAY=:0
+    echo "⚠️  DISPLAY was not set, setting to :0"
+fi
 
 # Hide mouse cursor
 unclutter -idle 0.1 -root &
