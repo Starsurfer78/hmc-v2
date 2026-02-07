@@ -31,40 +31,57 @@
         </main>
         
         <footer id="player-controls">
-            <div class="progress-row">
-                <span id="current-time">0:00</span>
+            <div class="progress-container">
                 <div class="progress-bar-bg">
                     <div class="progress-fill" id="progress-fill"></div>
                 </div>
-                <span id="total-time">0:00</span>
             </div>
 
-            <div class="volume-row">
-                <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
-                    <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02z"/>
-                </svg>
-                <input type="range" id="volume-slider" min="0" max="60" value="60">
-                <span id="volume-value">60%</span>
-            </div>
-
-            <div class="controls-row">
-                <div class="now-playing" style="display: none;">
-                    <span class="track-title" id="np-title"></span>
-                    <span class="artist-name" id="np-artist"></span>
+            <div class="player-row">
+                <div class="player-left">
+                    <div class="now-playing">
+                        <span class="track-title" id="np-title"></span>
+                        <span class="artist-name" id="np-artist"></span>
+                        <div class="time-display">
+                            <span id="current-time">0:00</span> / <span id="total-time">0:00</span>
+                        </div>
+                    </div>
                 </div>
-                <button id="btn-prev" title="Vorheriger">
-                    <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>
-                </button>
-                <button id="btn-play-pause" title="Wiedergabe/Pause">
-                    <svg id="icon-play" viewBox="0 0 24 24" width="32" height="32" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
-                    <!-- Pause icon will be swapped via JS or CSS class later, but for now we keep it simple or handle in JS -->
-                </button>
-                <button id="btn-stop" title="Stopp">
-                    <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor"><path d="M6 6h12v12H6z"/></svg>
-                </button>
-                <button id="btn-next" title="Nächster">
-                    <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg>
-                </button>
+
+                <div class="player-center">
+                    <button id="btn-prev" title="Vorheriger">
+                        <svg viewBox="0 0 24 24" width="28" height="28" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>
+                    </button>
+                    <button id="btn-play-pause" title="Wiedergabe/Pause">
+                        <svg id="icon-play" viewBox="0 0 24 24" width="40" height="40" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+                    </button>
+                    <button id="btn-stop" title="Stopp">
+                        <svg viewBox="0 0 24 24" width="28" height="28" fill="currentColor"><path d="M6 6h12v12H6z"/></svg>
+                    </button>
+                    <button id="btn-next" title="Nächster">
+                        <svg viewBox="0 0 24 24" width="28" height="28" fill="currentColor"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg>
+                    </button>
+                </div>
+
+                <div class="player-right">
+                    <div class="volume-wrapper">
+                        <button class="volume-btn" onclick="adjustVolume(-5)" title="Leiser">
+                            <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
+                                <path d="M3 9v6h4l5 5V4L7 9H3z" />
+                                <path d="M14 11h8v2h-8z" />
+                            </svg>
+                        </button>
+                        <input type="range" id="volume-slider" min="0" max="60" value="60">
+                        <button class="volume-btn" onclick="adjustVolume(5)" title="Lauter">
+                             <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
+                                <path d="M3 9v6h4l5 5V4L7 9H3z" />
+                                <path d="M14 11h3v-3h2v3h3v2h-3v3h-2v-3h-3z" />
+                            </svg>
+                        </button>
+                        <span id="volume-value">60%</span>
+                    </div>
+                    <div id="queue-container-target"></div>
+                </div>
             </div>
         </footer>
     </div>

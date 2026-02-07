@@ -18,7 +18,7 @@ class PlaybackState(str, Enum):
 class MpvController:
     """
     Robust MPV Controller with state management, process monitoring,
-    and event handling.
+    event handling, and playback queue management.
     """
     def __init__(self, audio_device: str = "hw:1,0", max_volume: int = 60):
         self.audio_device = audio_device
@@ -28,16 +28,23 @@ class MpvController:
         self.process: Optional[subprocess.Popen] = None
         self._shutdown_event = asyncio.Event()
         self._ipc_task: Optional[asyncio.Task] = None
+        self._monitor_task: Optional[asyncio.Task] = None
         
         # State
         self.state = PlaybackState.IDLE
-        self.current_playlist: List[dict] = []
-        self.current_track_index = 0
+        
+        # ==========================================
+        # 🎵 PLAYBACK QUEUE (Wiedergabeliste)
+        # ==========================================
+        self.playback_queue: List[dict] = []  # Ordered list of tracks
+        self.current_track_index = 0  # Index in playback_queue
+        
         self.duration = 0.0
         self.position = 0.0
         
         # Callbacks for state changes (optional)
         self.on_state_change: Optional[Callable[[PlaybackState], None]] = None
+        self.on_track_change: Optional[Callable[[dict], None]] = None
 
     async def start(self):
         """Starts the MPV process and the IPC listener task."""
@@ -49,7 +56,6 @@ class MpvController:
         # 1. Start MPV Process
         if self.audio_device == "mock":
             print("MOCK PLAYER: Starting mock process")
-            # For mock, we don't actually start a process, but we simulate state
             self.state = PlaybackState.IDLE
             return
 
@@ -59,8 +65,8 @@ class MpvController:
             f"--volume={self.max_volume}",
             "--no-video",
             "--input-ipc-server=" + self.socket_path,
-            "--idle=yes",  # Keep process alive
-            "--keep-open=yes" # Do not terminate after file end
+            "--idle=yes",
+            "--keep-open=no"  # Changed: Auto-advance to next track
         ]
 
         print(f"Starting MPV: {' '.join(cmd)}")
@@ -71,10 +77,8 @@ class MpvController:
         )
 
         # 2. Wait for socket to appear
-        # Increased timeout to 5 seconds for slower Pis
         for _ in range(50): 
             if Path(self.socket_path).exists():
-                # Give MPV a moment to actually bind to the socket
                 await asyncio.sleep(0.5)
                 break
             await asyncio.sleep(0.1)
@@ -83,14 +87,10 @@ class MpvController:
             self.state = PlaybackState.ERROR
             return
 
-        # 3. Start IPC Listener
+        # 3. Start IPC Listener & Monitor
         self._ipc_task = asyncio.create_task(self._ipc_loop())
         self._monitor_task = asyncio.create_task(self._monitor_process())
         self.state = PlaybackState.IDLE
-        
-        # 4. Observe properties
-        # Moved to _ipc_loop to ensure they are registered on the listening connection
-        pass
 
     async def stop(self):
         """Stops the MPV process and cleans up."""
@@ -103,6 +103,14 @@ class MpvController:
             except asyncio.CancelledError:
                 pass
             self._ipc_task = None
+
+        if self._monitor_task:
+            try:
+                self._monitor_task.cancel()
+                await self._monitor_task
+            except asyncio.CancelledError:
+                pass
+            self._monitor_task = None
 
         if self.process:
             if self.audio_device != "mock":
@@ -120,20 +128,158 @@ class MpvController:
                 pass
         
         self.state = PlaybackState.STOPPED
-        self.current_playlist = []
-        self.current_track_index = 0
+        self.clear_queue()
 
+    # ==========================================
+    # 🎵 PLAYBACK QUEUE MANAGEMENT
+    # ==========================================
+    
+    def clear_queue(self):
+        """Clear the entire playback queue."""
+        self.playback_queue = []
+        self.current_track_index = 0
+        self.duration = 0.0
+        self.position = 0.0
+    
+    def get_queue(self) -> List[dict]:
+        """Get the current playback queue."""
+        return self.playback_queue.copy()
+    
+    def get_upcoming_tracks(self) -> List[dict]:
+        """Get only upcoming tracks (not including current)."""
+        if self.current_track_index < len(self.playback_queue) - 1:
+            return self.playback_queue[self.current_track_index + 1:]
+        return []
+    
+    def get_current_track(self) -> Optional[dict]:
+        """Get the currently playing track."""
+        if 0 <= self.current_track_index < len(self.playback_queue):
+            return self.playback_queue[self.current_track_index]
+        return None
+    
+    async def play_now(self, track: dict):
+        """
+        Play a single track immediately.
+        Stops current playback, clears queue, adds track, starts playback.
+        """
+        # Clear queue and add single track
+        self.clear_queue()
+        self.playback_queue = [track]
+        self.current_track_index = 0
+        
+        # Start playback
+        await self._play_current_track()
+        return {
+            "status": "playing",
+            "action": "play_now",
+            "track": track,
+            "queue_length": 1
+        }
+    
+    async def play_next(self, track: dict):
+        """
+        Insert track to play next (after current track).
+        Does not interrupt current playback.
+        """
+        if not self.playback_queue:
+            # Queue is empty, treat as play_now
+            return await self.play_now(track)
+        
+        # Insert after current index
+        insert_position = self.current_track_index + 1
+        self.playback_queue.insert(insert_position, track)
+        
+        return {
+            "status": "queued",
+            "action": "play_next",
+            "track": track,
+            "position": insert_position,
+            "queue_length": len(self.playback_queue)
+        }
+    
+    async def add_to_queue(self, track: dict):
+        """
+        Add track to the end of the queue.
+        Does not interrupt current playback.
+        """
+        if not self.playback_queue:
+            # Queue is empty, treat as play_now
+            return await self.play_now(track)
+        
+        self.playback_queue.append(track)
+        
+        return {
+            "status": "queued",
+            "action": "add_to_queue",
+            "track": track,
+            "position": len(self.playback_queue) - 1,
+            "queue_length": len(self.playback_queue)
+        }
+    
+    async def remove_from_queue(self, index: int) -> bool:
+        """
+        Remove track at index from queue.
+        Special handling if removing currently playing track.
+        """
+        if index < 0 or index >= len(self.playback_queue):
+            return False
+        
+        # Special case: Removing currently playing track
+        if index == self.current_track_index:
+            # If it's the last track, stop playback (which clears queue)
+            if index == len(self.playback_queue) - 1:
+                await self.stop_playback()
+                return True
+
+            # Skip to next track (or stop if last)
+            await self.next_track()
+            # Adjust index after next_track incremented it
+            self.playback_queue.pop(index)
+            if self.current_track_index > 0:
+                self.current_track_index -= 1
+        else:
+            # Simple remove
+            self.playback_queue.pop(index)
+            # Adjust current index if we removed something before it
+            if index < self.current_track_index:
+                self.current_track_index -= 1
+        
+        return True
+    
+    async def jump_to_track(self, index: int):
+        """
+        Jump to specific track in queue and start playing.
+        """
+        if index < 0 or index >= len(self.playback_queue):
+            raise ValueError(f"Index {index} out of range")
+        
+        self.current_track_index = index
+        await self._play_current_track()
+        
+        return {
+            "status": "playing",
+            "action": "jump_to_track",
+            "track": self.get_current_track(),
+            "index": index
+        }
+
+    # ==========================================
+    # 🎵 PLAYBACK CONTROL (Updated for Queue)
+    # ==========================================
+    
     async def play_album(self, tracks: List[dict], start_index: int = 0):
-        """Plays a list of tracks."""
+        """
+        Play an album (replaces queue with all tracks).
+        This is the legacy method - now uses queue system.
+        """
         if not tracks:
             raise ValueError("No tracks provided")
 
-        # Idempotency check: If playing same playlist and same start index, do nothing (or just resume)
-        # We compare the first track URL as a simple signature
+        # Check idempotency
         if (self.state == PlaybackState.PLAYING and 
-            self.current_playlist and 
-            len(tracks) == len(self.current_playlist) and 
-            tracks[0]['url'] == self.current_playlist[0]['url'] and
+            self.playback_queue and 
+            len(tracks) == len(self.playback_queue) and 
+            tracks[0]['url'] == self.playback_queue[0]['url'] and
             self.current_track_index == start_index):
             
             print("Ignoring request to restart currently playing album/track.")
@@ -147,7 +293,8 @@ class MpvController:
         if not self.process and self.audio_device != "mock":
             await self.start()
         
-        self.current_playlist = tracks
+        # Replace queue with album
+        self.playback_queue = tracks
         self.current_track_index = start_index
         self.state = PlaybackState.LOADING
 
@@ -160,27 +307,75 @@ class MpvController:
                 "current": tracks[start_index]
             }
 
-        # Create Playlist File
-        playlist_path = "/tmp/hmc-playlist.m3u"
-        with open(playlist_path, 'w') as f:
-            for track in tracks:
-                f.write(f"{track['url']}\n")
-
-        # Load Playlist
-        await self._send_command(["loadlist", playlist_path, "replace"])
-        
-        # Jump to start index if needed
-        if start_index > 0:
-             await self._send_command(["playlist-play-index", str(start_index)])
-        
-        # Ensure playback starts
-        await self._send_command(["set_property", "pause", False])
+        # Play current track
+        await self._play_current_track()
         
         return {
             "status": "playing",
             "tracks": len(tracks),
-            "current": tracks[start_index] if start_index < len(tracks) else None
+            "current": tracks[start_index]
         }
+
+    async def _play_current_track(self):
+        """Internal: Play the track at current_track_index."""
+        current_track = self.get_current_track()
+        if not current_track:
+            print("No track to play at current index")
+            self.state = PlaybackState.IDLE
+            return
+        
+        if self.audio_device == "mock":
+            print(f"MOCK PLAYER: Playing track {self.current_track_index}: {current_track['name']}")
+            self.state = PlaybackState.PLAYING
+            return
+        
+        # Load track in MPV
+        url = current_track['url']
+        await self._send_command(["loadfile", url, "replace"])
+        await self._send_command(["set_property", "pause", False])
+        
+        self.state = PlaybackState.PLAYING
+        
+        # Trigger callback if set
+        if self.on_track_change:
+            self.on_track_change(current_track)
+
+    async def next_track(self):
+        """Skip to next track in queue."""
+        if self.audio_device == "mock":
+            self.current_track_index = min(len(self.playback_queue) - 1, self.current_track_index + 1)
+            return
+        
+        # Check if there is a next track
+        if self.current_track_index < len(self.playback_queue) - 1:
+            self.current_track_index += 1
+            await self._play_current_track()
+        else:
+            # No more tracks, stop playback
+            print("End of queue reached")
+            await self.stop_playback()
+
+    async def previous_track(self):
+        """
+        Go to previous track.
+        If position > 3s, restart current track.
+        Otherwise, go to actual previous track.
+        """
+        if self.audio_device == "mock":
+            self.current_track_index = max(0, self.current_track_index - 1)
+            return
+        
+        # If more than 3 seconds into track, restart it
+        if self.position > 3.0:
+            await self.seek(0)
+        else:
+            # Go to previous track if available
+            if self.current_track_index > 0:
+                self.current_track_index -= 1
+                await self._play_current_track()
+            else:
+                # Already at first track, just restart it
+                await self.seek(0)
 
     async def pause(self):
         if self.audio_device == "mock":
@@ -193,18 +388,20 @@ class MpvController:
             self.state = PlaybackState.PLAYING
             return
         await self._send_command(["set_property", "pause", False])
-    
-    async def next_track(self):
-        if self.audio_device == "mock":
-            self.current_track_index = min(len(self.current_playlist) - 1, self.current_track_index + 1)
-            return
-        await self._send_command(["playlist-next"])
 
-    async def previous_track(self):
+    async def stop_playback(self):
+        """
+        Stop playback and clear queue.
+        Different from stop() which kills the process.
+        """
         if self.audio_device == "mock":
-             self.current_track_index = max(0, self.current_track_index - 1)
-             return
-        await self._send_command(["playlist-prev"])
+            self.state = PlaybackState.STOPPED
+            self.clear_queue()
+            return
+        
+        await self._send_command(["stop"])
+        self.state = PlaybackState.STOPPED
+        self.clear_queue()
 
     async def seek(self, position: float):
         """Seek to absolute position"""
@@ -232,8 +429,10 @@ class MpvController:
             "position": self.position,
             "duration": self.duration,
             "current_track_index": self.current_track_index,
-            "current_track": self.current_playlist[self.current_track_index] if 0 <= self.current_track_index < len(self.current_playlist) else None,
-            "total_tracks": len(self.current_playlist)
+            "current_track": self.get_current_track(),
+            "total_tracks": len(self.playback_queue),
+            "queue": self.get_queue(),
+            "upcoming_tracks": self.get_upcoming_tracks()
         }
 
     async def _send_command(self, command: List[Any]) -> Optional[Dict]:
@@ -267,11 +466,11 @@ class MpvController:
                 self.state = PlaybackState.ERROR
                 self.process = None
                 
-                # Attempt restart with current playlist
-                if self.current_playlist:
+                # Attempt restart with current queue
+                if self.playback_queue:
                     await asyncio.sleep(2)
                     try:
-                        await self.play_album(self.current_playlist, self.current_track_index)
+                        await self._play_current_track()
                     except Exception as e:
                         print(f"❌ Restart failed: {e}")
             
@@ -280,7 +479,7 @@ class MpvController:
     async def _ipc_loop(self):
         """Continuous loop to read events from MPV socket."""
         # Wait for socket to appear initially
-        for _ in range(30):  # 3 seconds
+        for _ in range(30):
             if Path(self.socket_path).exists():
                 break
             await asyncio.sleep(0.1)
@@ -295,22 +494,23 @@ class MpvController:
                     '{"command": ["observe_property", 2, "time-pos"]}\n',
                     '{"command": ["observe_property", 3, "duration"]}\n',
                     '{"command": ["observe_property", 4, "playlist-pos"]}\n',
-                    '{"command": ["observe_property", 5, "idle-active"]}\n'
+                    '{"command": ["observe_property", 5, "idle-active"]}\n',
+                    '{"command": ["observe_property", 6, "eof-reached"]}\n'
                 ]
                 for obs in observers:
                     writer.write(obs.encode())
                 await writer.drain()
 
-                # We stay connected to receive events
+                # Stay connected to receive events
                 while not self._shutdown_event.is_set():
                     line = await reader.readline()
                     if not line:
-                        break # Connection closed
+                        break
                     
                     try:
                         data = json.loads(line)
                         if "event" in data:
-                            self._handle_event(data)
+                            await self._handle_event(data)
                     except json.JSONDecodeError:
                         pass
                 
@@ -318,7 +518,6 @@ class MpvController:
                 await writer.wait_closed()
             
             except (ConnectionRefusedError, FileNotFoundError):
-                # Socket not ready or MPV died
                 if not self._shutdown_event.is_set():
                     print("⚠️ Lost connection to MPV, retrying...")
                     await asyncio.sleep(1)
@@ -326,7 +525,8 @@ class MpvController:
                 print(f"IPC Loop Error: {e}")
                 await asyncio.sleep(1)
 
-    def _handle_event(self, event: dict):
+    async def _handle_event(self, event: dict):
+        """Handle MPV events - Updated for queue auto-advance."""
         evt_name = event.get("event")
         
         if evt_name == "property-change":
@@ -340,17 +540,21 @@ class MpvController:
             elif name == "duration" and value is not None:
                 self.duration = float(value)
             elif name == "playlist-pos" and value is not None:
-                self.current_track_index = int(value)
+                # MPV's internal playlist position changed
+                pass
             elif name == "idle-active":
-                 if value is True:
-                     self.state = PlaybackState.IDLE
+                if value is True:
+                    self.state = PlaybackState.IDLE
+            elif name == "eof-reached":
+                if value is True:
+                    # ⭐ Track ended - auto-advance to next
+                    print(f"Track {self.current_track_index} ended")
+                    await self.next_track()
 
         elif evt_name == "end-file":
             reason = event.get("reason")
             if reason == "error":
                 self.state = PlaybackState.ERROR
             elif reason == "eof":
-                # Check if playlist ended? 
-                # Usually MPV handles playlist navigation internally
+                # End of file reached, next_track will be called via eof-reached
                 pass
-

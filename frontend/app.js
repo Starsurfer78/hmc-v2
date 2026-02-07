@@ -8,6 +8,9 @@ let currentAlbum = null;
 let currentTracks = [];
 let currentTrack = null;
 
+// Queue UI State
+let queueVisible = false;
+
 const content = document.getElementById('content');
 const statusDiv = document.getElementById('status');
 const pageTitle = document.getElementById('page-title');
@@ -20,6 +23,7 @@ async function init() {
     setupNavigation();
     setupKioskProtection();
     setupAccentSwitcher();
+    setupQueueUI();
     loadLibraries();
     setInterval(updatePlayerState, 2000);
     
@@ -44,10 +48,9 @@ async function init() {
 }
 
 function setupAccentSwitcher() {
-    const accents = ['#e5a00d', '#4facfe', '#ff6b6b', '#6bffb3', '#d45d79']; // Orange, Blue, Red, Green, Pink
+    const accents = ['#e5a00d', '#4facfe', '#ff6b6b', '#6bffb3', '#d45d79'];
     let idx = 0;
     
-    // Try to find current index
     const current = localStorage.getItem('hmc_accent');
     if (current) {
         const found = accents.indexOf(current);
@@ -65,10 +68,7 @@ function setupAccentSwitcher() {
 }
 
 function setupKioskProtection() {
-    // Block context menu
     document.addEventListener('contextmenu', e => e.preventDefault());
-    
-    // Block double tap zoom (optional, CSS touch-action is better)
     document.addEventListener('touchstart', e => {
         if (e.touches.length > 1) e.preventDefault();
     }, { passive: false });
@@ -80,6 +80,12 @@ function setupNavigation() {
 }
 
 function goBack() {
+    // Close queue if open
+    if (queueVisible) {
+        closeQueue();
+        return;
+    }
+    
     switch (currentView) {
         case 'track-detail':
             if (currentAlbum) openAlbum(currentAlbum);
@@ -102,6 +108,246 @@ function updateHeader(title, showNav) {
     pageTitle.innerText = title;
     btnHome.style.display = showNav ? 'flex' : 'none';
     btnBack.style.display = showNav ? 'flex' : 'none';
+}
+
+// ==========================================
+// 🎵 QUEUE UI
+// ==========================================
+
+function setupQueueUI() {
+    // Add Queue button to player controls
+    const target = document.getElementById('queue-container-target');
+    if (target) {
+        target.appendChild(createQueueButton());
+    }
+    
+    // Create Queue Overlay
+    const queueOverlay = document.createElement('div');
+    queueOverlay.id = 'queue-overlay';
+    queueOverlay.className = 'queue-overlay';
+    queueOverlay.innerHTML = `
+        <div class="queue-container">
+            <div class="queue-header">
+                <h2>Wiedergabeliste</h2>
+                <button id="queue-close" class="queue-close">✕</button>
+            </div>
+            <div class="queue-content">
+                <div class="queue-current">
+                    <!-- Current track info -->
+                </div>
+                <div class="queue-list">
+                    <!-- Queue items -->
+                </div>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(queueOverlay);
+    
+    // Setup close handler
+    document.getElementById('queue-close').onclick = closeQueue;
+    queueOverlay.onclick = (e) => {
+        if (e.target === queueOverlay) closeQueue();
+    };
+}
+
+function createQueueButton() {
+    const btn = document.createElement('button');
+    btn.id = 'btn-queue';
+    btn.title = 'Wiedergabeliste';
+    btn.innerHTML = `
+        <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
+            <path d="M15 6H3v2h12V6zm0 4H3v2h12v-2zM3 16h8v-2H3v2zM17 6v8.18c-.31-.11-.65-.18-1-.18-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3V8h3V6h-5z"/>
+        </svg>
+        <span class="queue-count" id="queue-count" style="display:none">0</span>
+    `;
+    btn.onclick = openQueue;
+    return btn;
+}
+
+async function openQueue() {
+    queueVisible = true;
+    const overlay = document.getElementById('queue-overlay');
+    overlay.classList.add('visible');
+    
+    // Load queue data
+    await updateQueue();
+}
+
+function closeQueue() {
+    queueVisible = false;
+    const overlay = document.getElementById('queue-overlay');
+    overlay.classList.remove('visible');
+}
+
+async function updateQueue() {
+    if (!queueVisible) return;
+    
+    try {
+        const data = await fetch(`${API_BASE}/queue`).then(r => r.json());
+        
+        const currentDiv = document.querySelector('.queue-current');
+        const listDiv = document.querySelector('.queue-list');
+        
+        // Current Track
+        if (data.current_track) {
+            const track = data.current_track;
+            currentDiv.innerHTML = `
+                <div class="queue-current-card">
+                    ${track.image ? `<img src="${track.image}" alt="${track.name}">` : '<div class="album-placeholder">🎵</div>'}
+                    <div class="queue-current-info">
+                        <h3>${track.name}</h3>
+                        <p>Spielt gerade</p>
+                    </div>
+                </div>
+            `;
+        } else {
+            currentDiv.innerHTML = '<p>Keine Wiedergabe</p>';
+        }
+        
+        // Upcoming Tracks
+        if (data.upcoming_tracks && data.upcoming_tracks.length > 0) {
+            listDiv.innerHTML = '<h3>Als Nächstes</h3>' + data.upcoming_tracks.map((track, idx) => {
+                const actualIndex = data.current_index + idx + 1;
+                return `
+                    <div class="queue-item" data-index="${actualIndex}">
+                        <span class="queue-item-num">${idx + 1}</span>
+                        <span class="queue-item-name">${track.name}</span>
+                        <div class="queue-item-actions">
+                            <button onclick="jumpToTrack(${actualIndex})" title="Zu diesem Titel springen">
+                                <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+                            </button>
+                            <button onclick="removeFromQueue(${actualIndex})" title="Entfernen">
+                                <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+                            </button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        } else {
+            listDiv.innerHTML = '<p class="queue-empty">Keine weiteren Titel in der Warteschlange</p>';
+        }
+        
+    } catch (e) {
+        console.error('Failed to load queue', e);
+    }
+}
+
+async function jumpToTrack(index) {
+    try {
+        await fetch(`${API_BASE}/queue/jump/${index}`, { method: 'POST' });
+        await updateQueue();
+        await updatePlayerState();
+    } catch (e) {
+        console.error('Jump failed', e);
+    }
+}
+
+async function removeFromQueue(index) {
+    try {
+        await fetch(`${API_BASE}/queue/${index}`, { method: 'DELETE' });
+        await updateQueue();
+        await updatePlayerState();
+    } catch (e) {
+        console.error('Remove failed', e);
+    }
+}
+
+// ==========================================
+// 🎵 TRACK CONTEXT MENU
+// ==========================================
+
+function showTrackMenu(track, albumId) {
+    // Create overlay
+    const overlay = document.createElement('div');
+    overlay.className = 'track-menu-overlay';
+    overlay.innerHTML = `
+        <div class="track-menu">
+            <div class="track-menu-header">
+                <h3>${track.name}</h3>
+            </div>
+            <div class="track-menu-actions">
+                <button class="track-menu-btn" data-action="play-now">
+                    <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+                    <span>Jetzt wiedergeben</span>
+                </button>
+                <button class="track-menu-btn" data-action="play-next">
+                    <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg>
+                    <span>Als Nächstes wiedergeben</span>
+                </button>
+                <button class="track-menu-btn" data-action="add-to-queue">
+                    <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
+                    <span>Zur Wiedergabeliste hinzufügen</span>
+                </button>
+            </div>
+            <button class="track-menu-close">Abbrechen</button>
+        </div>
+    `;
+    
+    document.body.appendChild(overlay);
+    
+    // Setup handlers
+    overlay.querySelectorAll('.track-menu-btn').forEach(btn => {
+        btn.onclick = async () => {
+            const action = btn.dataset.action;
+            await handleQueueAction(action, track.id, albumId);
+            document.body.removeChild(overlay);
+        };
+    });
+    
+    const closeMenu = () => document.body.removeChild(overlay);
+    overlay.querySelector('.track-menu-close').onclick = closeMenu;
+    overlay.onclick = (e) => {
+        if (e.target === overlay) closeMenu();
+    };
+}
+
+async function handleQueueAction(action, trackId, albumId) {
+    const endpoint = {
+        'play-now': '/queue/play-now',
+        'play-next': '/queue/play-next',
+        'add-to-queue': '/queue/add'
+    }[action];
+    
+    if (!endpoint) return;
+    
+    try {
+        const response = await fetch(`${API_BASE}${endpoint}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ track_id: trackId, album_id: albumId })
+        });
+        
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        
+        const result = await response.json();
+        console.log('Queue action result:', result);
+        
+        // Show feedback
+        showToast({
+            'play-now': 'Wiedergabe gestartet',
+            'play-next': 'Als Nächstes hinzugefügt',
+            'add-to-queue': 'Zur Wiedergabeliste hinzugefügt'
+        }[action]);
+        
+        await updatePlayerState();
+        
+    } catch (e) {
+        console.error('Queue action failed', e);
+        showToast('Fehler: Aktion fehlgeschlagen', true);
+    }
+}
+
+function showToast(message, isError = false) {
+    const toast = document.createElement('div');
+    toast.className = 'toast' + (isError ? ' toast-error' : '');
+    toast.innerText = message;
+    document.body.appendChild(toast);
+    
+    setTimeout(() => toast.classList.add('visible'), 10);
+    setTimeout(() => {
+        toast.classList.remove('visible');
+        setTimeout(() => document.body.removeChild(toast), 300);
+    }, 2000);
 }
 
 // Navigation
@@ -166,14 +412,11 @@ async function openAlbum(album) {
     content.innerHTML = '<div class="loading">Lade Titel...</div>';
     
     try {
-        // Fetch tracks
         const res = await fetch(`${API_BASE}/album/${album.id}/tracks`);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         currentTracks = await res.json();
         
         renderTracklist(album, currentTracks);
-        
-        // Removed auto-play per user request to allow browsing
     } catch (e) {
         showError(e);
     }
@@ -184,19 +427,21 @@ function openTrack(index) {
     currentView = 'track-detail';
     currentTrack = track;
     
-    updateHeader(`${currentAlbum.name}`, true); // Simplified header
+    updateHeader(`${currentAlbum.name}`, true);
     
     let imgHtml = '';
-    // Use track image if available, otherwise album image
     const imageUrl = track.image || currentAlbum.image;
     
     if (imageUrl) {
         imgHtml = `
-            <img src="${imageUrl}" alt="${track.name}" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex'">
-            <div class="placeholder" style="display:none; width: 250px; height: 250px; margin: 0 auto 1rem; font-size: 3rem;">🎵</div>
+            <img src="${imageUrl}" alt="${track.name}" 
+                 onclick="playAlbumFromTrack('${currentAlbum.id}', '${track.id}')"
+                 style="cursor: pointer"
+                 onerror="this.style.display='none'; this.nextElementSibling.style.display='flex'">
+            <div class="album-placeholder" style="display:none;">🎵</div>
         `;
     } else {
-        imgHtml = `<div class="placeholder" style="width: 250px; height: 250px; margin: 0 auto 1rem; font-size: 3rem;">🎵</div>`;
+        imgHtml = `<div class="album-placeholder">🎵</div>`;
     }
 
     content.innerHTML = `
@@ -210,10 +455,16 @@ function openTrack(index) {
                 </div>
                 ${track.overview ? `<div style="max-width: 600px; margin-bottom: 2rem; line-height: 1.5; color: #ddd;">${track.overview}</div>` : ''}
                 
-                <button class="btn-play-hero" onclick="playAlbumFromTrack('${currentAlbum.id}', '${track.id}')">
-                    <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor" style="margin-right: 8px; vertical-align: middle;"><path d="M8 5v14l11-7z"/></svg>
-                    AB HIER SPIELEN
-                </button>
+                <div style="display: flex; gap: 1rem; justify-content: center; width: 100%; margin-top: 1rem;">
+                    <button class="btn-secondary" onclick="playAlbumFromTrack('${currentAlbum.id}', '${track.id}')">
+                        <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor" style="margin-right: 8px; vertical-align: middle;"><path d="M8 5v14l11-7z"/></svg>
+                        AB HIER SPIELEN
+                    </button>
+                    
+                    <button class="btn-secondary" onclick="showTrackMenu(currentTracks[${index}], '${currentAlbum.id}')">
+                        Mehr Optionen
+                    </button>
+                </div>
             </div>
         </div>
     `;
@@ -224,32 +475,38 @@ function renderTracklist(album, tracks) {
     if (album.image) {
         imgHtml = `
             <img src="${album.image}" alt="${album.name}" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex'">
-            <div class="placeholder" style="display:none; width: 250px; height: 250px; margin: 0 auto 1rem; font-size: 3rem;">🎵</div>
+            <div class="album-placeholder" style="display:none;">🎵</div>
         `;
     } else {
-        imgHtml = `<div class="placeholder" style="width: 250px; height: 250px; margin: 0 auto 1rem; font-size: 3rem;">🎵</div>`;
+        imgHtml = `<div class="album-placeholder">🎵</div>`;
     }
 
     const trackRows = tracks.map((t, i) => `
         <div class="track-row" onclick="openTrack(${i})">
             <span class="track-num">${i+1}</span>
             <span class="track-name">${t.name}</span>
-            <span class="track-dur">${formatDuration(t.duration)}</span>
+            <span class="track-duration">${formatDuration(t.duration)}</span>
+            <button class="track-menu-trigger" onclick="event.stopPropagation(); showTrackMenu(currentTracks[${i}], '${album.id}')">⋮</button>
         </div>
     `).join('');
 
     content.innerHTML = `
-        <div class="album-detail">
-            <div class="album-header">
+        <div class="album-detail-view">
+            <div class="album-sidebar">
                 ${imgHtml}
-                <h2>${album.name}</h2>
                 <button class="btn-play-hero" onclick="playAlbum('${album.id}')">
                     <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor" style="margin-right: 8px; vertical-align: middle;"><path d="M8 5v14l11-7z"/></svg>
                     ALLES ABSPIELEN
                 </button>
             </div>
-            <div class="track-list">
-                ${trackRows}
+            <div class="album-content">
+                <div class="album-header-info">
+                    <h2>${album.name}</h2>
+                    ${currentArtist ? `<h3 style="color: var(--text-muted); margin: 0; font-weight: normal;">${currentArtist.name}</h3>` : ''}
+                </div>
+                <div class="track-list">
+                    ${trackRows}
+                </div>
             </div>
         </div>
     `;
@@ -283,6 +540,20 @@ async function playAlbumFromTrack(albumId, trackId) {
     }
 }
 
+function adjustVolume(delta) {
+    const slider = document.getElementById('volume-slider');
+    let newVal = parseInt(slider.value) + delta;
+    if (newVal < 0) newVal = 0;
+    if (newVal > 100) newVal = 100; // Assuming max is 100 or 60? HTML says max="60"
+    if (newVal > slider.max) newVal = slider.max;
+    
+    slider.value = newVal;
+    setVolume(newVal);
+}
+
+// Global scope
+window.adjustVolume = adjustVolume;
+
 // Helpers
 function renderGrid(items, onClick) {
     content.innerHTML = '';
@@ -294,10 +565,10 @@ function renderGrid(items, onClick) {
         if (item.image) {
             imgHtml = `
                 <img src="${item.image}" loading="lazy" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex'">
-                <div class="placeholder" style="display:none">🎵</div>
+                <div class="album-placeholder" style="display:none">🎵</div>
             `;
         } else {
-            imgHtml = `<div class="placeholder">🎵</div>`;
+            imgHtml = `<div class="album-placeholder">🎵</div>`;
         }
         
         el.innerHTML = `
@@ -329,7 +600,7 @@ function setupPlayerControls() {
     document.getElementById('btn-next').onclick = () => fetch(`${API_BASE}/player/next`, { method: 'POST' });
     document.getElementById('btn-prev').onclick = () => fetch(`${API_BASE}/player/previous`, { method: 'POST' });
 
-    // Seek Functionality
+    // Seek
     const progressBar = document.querySelector('.progress-bar-bg');
     if (progressBar) {
         progressBar.onclick = async (e) => {
@@ -353,7 +624,7 @@ function setupPlayerControls() {
         };
     }
 
-    // Volume Control
+    // Volume
     const volumeSlider = document.getElementById('volume-slider');
     const volumeValue = document.getElementById('volume-value');
     
@@ -363,7 +634,6 @@ function setupPlayerControls() {
             const vol = parseInt(e.target.value);
             volumeValue.innerText = `${vol}%`;
             
-            // Debounce API calls
             clearTimeout(volumeTimeout);
             volumeTimeout = setTimeout(async () => {
                 try {
@@ -385,10 +655,8 @@ async function updatePlayerState() {
     try {
         const state = await fetch(`${API_BASE}/player/state`).then(r => r.json());
         
-        // Hide Overlay
         if (overlay) overlay.style.display = 'none';
 
-        // Translate State
         const stateMap = {
             'idle': 'Bereit',
             'loading': 'Lade...',
@@ -407,28 +675,30 @@ async function updatePlayerState() {
             iconContainer.innerHTML = '<svg viewBox="0 0 24 24" width="32" height="32" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>';
         }
 
-        // Highlight current track in list
+        // Update Queue Count
+        const queueCount = document.getElementById('queue-count');
+        if (queueCount) {
+            const total = state.total_tracks || 0;
+            queueCount.innerText = total;
+            queueCount.style.display = total > 0 ? 'flex' : 'none';
+        }
+
+        // Highlight current track
         if (currentView === 'tracks' && state.current_track) {
             const rows = document.querySelectorAll('.track-row');
-            // Check if current album matches playing album (simple check via currentTracks containing the playing track)
-            // But state.current_track has 'id'. 
-            // We iterate rows and match index from currentTracks
-            
             rows.forEach((row, index) => {
                 const track = currentTracks[index];
                 if (track && track.id === state.current_track.id) {
                     row.classList.add('active');
-                    // Optional: Scroll into view if needed, but might be annoying
                 } else {
                     row.classList.remove('active');
                 }
             });
         } else if (currentView === 'tracks') {
-            // clear if no track playing
              document.querySelectorAll('.track-row').forEach(r => r.classList.remove('active'));
         }
 
-        // Update Now Playing Info
+        // Now Playing
         const npContainer = document.querySelector('.now-playing');
         const npTitle = document.getElementById('np-title');
         const npArtist = document.getElementById('np-artist');
@@ -441,7 +711,7 @@ async function updatePlayerState() {
             npContainer.style.display = 'none';
         }
 
-        // Update Progress Bar
+        // Progress Bar
         const currentTimeEl = document.getElementById('current-time');
         const totalTimeEl = document.getElementById('total-time');
         const progressFill = document.getElementById('progress-fill');
@@ -467,17 +737,15 @@ async function updatePlayerState() {
             b.style.pointerEvents = 'auto';
         });
 
-        // Highlight current track if in track view
-        if (currentView === 'track-detail' && currentTrack && state.current_track) {
-            // Optional: Check if playing track matches current displayed track
+        // Update queue view if open
+        if (queueVisible) {
+            await updateQueue();
         }
 
     } catch (e) {
         statusDiv.innerText = "OFFLINE";
-        // Show Overlay
         if (overlay) overlay.style.display = 'flex';
         
-        // Disable buttons
         document.querySelectorAll('footer button').forEach(b => {
             b.disabled = true;
             b.style.opacity = 0.5;
