@@ -83,6 +83,16 @@ git pull
 sudo systemctl restart hmc
 ```
 
+## 🎨 Features & UI (Neu in v2.1)
+
+- **Optimiertes Album-Layout**: Side-by-Side Ansicht für Cover und Titelliste (auf größeren Screens).
+- **Verbesserte Touch-Steuerung**:
+  - Große, einheitliche Buttons im "Glassmorphism"-Design.
+  - Klickbare Cover in der Titelansicht zum direkten Starten.
+  - Zentriertes "Mehr Optionen"-Menü für bessere Erreichbarkeit.
+- **Lautstärkeregelung**: Neuer Slider mit +/- Tasten für präzise Einstellung.
+- **Responsive Design**: Passt sich dynamisch an verschiedene Displaygrößen an (optimiert für 7" Touchscreens).
+
 ---
 
 ## 💻 Entwicklung (Windows/Mac)
@@ -107,7 +117,9 @@ Du kannst HMC auch auf deinem PC entwickeln. Der Player läuft dann im **Mock-Mo
 - **Wiedergabe**:
   - "ALLES ABSPIELEN": Startet das ganze Album.
   - "AB HIER SPIELEN": Startet ab dem gewählten Titel.
-- **Player**: Play/Pause, Weiter, Zurück (unten fixiert).
+  - Klick auf das Cover in der Detailansicht startet ebenfalls die Wiedergabe.
+- **Player**: Play/Pause, Weiter, Lautstärke (+/-), Warteschlange.
+- **Mehr Optionen**: Kontextmenü für weitere Aktionen (z.B. zur Warteschlange hinzufügen).
 
 ---
 
