@@ -1,0 +1,154 @@
+# ============================================================
+# HMC v2.1 – Home Assistant Integration
+# ============================================================
+# Diese Blöcke in deine configuration.yaml eintragen.
+# Danach: Entwicklerwerkzeuge → YAML → Konfiguration neu laden
+# (oder: sudo systemctl restart homeassistant)
+# ============================================================
+
+
+# ------------------------------------------------------------
+# 1. REST Sensor – HMC Player Status
+# ------------------------------------------------------------
+# Pollt alle 10 Sekunden den HMC-Player.
+# Liefert: sensor.hmc_player_state mit Attributen
+#
+# Verfügbare Attribute nach dem Laden:
+#   state:               playing / paused / stopped / idle
+#   current_track:       { name, duration, id, url, image }
+#   position:            aktuelle Position in Sekunden
+#   duration:            Gesamtlänge in Sekunden
+#   total_tracks:        Anzahl Tracks in der Queue
+#
+# WICHTIG: IP-Adresse des Raspberry Pi anpassen!
+# ------------------------------------------------------------
+
+sensor:
+  - platform: rest
+    name: HMC Player State
+    unique_id: hmc_player_state
+    resource: http://192.168.178.XX:8000/player/state   # <-- IP anpassen!
+    scan_interval: 10
+    value_template: "{{ value_json.state }}"
+    json_attributes:
+      - current_track
+      - position
+      - duration
+      - total_tracks
+      - queue
+
+
+# ------------------------------------------------------------
+# 2. REST Commands – HMC Steuerung aus Home Assistant
+# ------------------------------------------------------------
+# Ermöglicht Pause / Resume / Stop aus Automationen und
+# dem Lovelace-Dashboard heraus.
+#
+# WICHTIG: IP-Adresse anpassen (gleiche wie oben)!
+# ------------------------------------------------------------
+
+rest_command:
+  hmc_pause:
+    url: http://192.168.178.XX:8000/player/pause        # <-- IP anpassen!
+    method: POST
+    content_type: "application/json"
+
+  hmc_resume:
+    url: http://192.168.178.XX:8000/player/resume       # <-- IP anpassen!
+    method: POST
+    content_type: "application/json"
+
+  hmc_stop:
+    url: http://192.168.178.XX:8000/player/stop         # <-- IP anpassen!
+    method: POST
+    content_type: "application/json"
+
+  hmc_next:
+    url: http://192.168.178.XX:8000/player/next         # <-- IP anpassen!
+    method: POST
+    content_type: "application/json"
+
+  hmc_previous:
+    url: http://192.168.178.XX:8000/player/previous     # <-- IP anpassen!
+    method: POST
+    content_type: "application/json"
+
+
+# ============================================================
+# 3. Lovelace Dashboard Card (Beispiel)
+# ============================================================
+# Diese Card in ein beliebiges Lovelace-Dashboard einfügen.
+# Zeigt: Status, aktuellen Track, Steuerungsbuttons
+# ============================================================
+
+# type: entities
+# title: HMC Player
+# entities:
+#   - entity: sensor.hmc_player_state
+#     name: Status
+#
+# type: horizontal-stack
+# cards:
+#   - type: button
+#     name: Pause
+#     icon: mdi:pause
+#     tap_action:
+#       action: call-service
+#       service: rest_command.hmc_pause
+#   - type: button
+#     name: Weiter
+#     icon: mdi:play
+#     tap_action:
+#       action: call-service
+#       service: rest_command.hmc_resume
+#   - type: button
+#     name: Stop
+#     icon: mdi:stop
+#     tap_action:
+#       action: call-service
+#       service: rest_command.hmc_stop
+
+
+# ============================================================
+# 4. Automationen – bereits direkt in HA angelegt!
+# ============================================================
+# Folgende Automationen wurden automatisch erstellt:
+#
+#   automation.hmc_pause_bei_tts
+#     → Pausiert HMC bei TTS-Durchsage, danach Resume
+#     → Auslöser: Event "hmc_tts_start" mit data.message
+#     → Beispielaufruf aus anderer Automation:
+#
+#       service: event.fire
+#         event_type: hmc_tts_start
+#         event_data:
+#           message: "Das Abendessen ist fertig!"
+#
+#   automation.hmc_nachtmodus_stop
+#     → Stoppt HMC automatisch um 20:00 Uhr
+#     → Läuft nur wenn state = playing oder paused
+#     → Uhrzeit in HA unter Automationen anpassen!
+#
+# ============================================================
+
+
+# ============================================================
+# 5. Schritte nach dem Eintragen
+# ============================================================
+#
+# 1. IP-Adresse in ALLEN URLs oben anpassen
+# 2. Konfiguration prüfen:
+#    → Entwicklerwerkzeuge → YAML → "Konfiguration prüfen"
+# 3. Neu laden:
+#    → Entwicklerwerkzeuge → YAML → "REST-Befehle neu laden"
+#    → Entwicklerwerkzeuge → YAML → "Template-Entitäten neu laden"
+#    → oder einfach: Settings → System → Restart
+# 4. Sensor prüfen:
+#    → Entwicklerwerkzeuge → Zustände → "hmc" suchen
+#    → sensor.hmc_player_state sollte erscheinen
+# 5. Test:
+#    → Entwicklerwerkzeuge → Dienste
+#    → Dienst: rest_command.hmc_pause aufrufen
+#    → HMC sollte pausieren
+#
+# ============================================================

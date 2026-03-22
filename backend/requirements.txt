@@ -6,3 +6,4 @@ python-dotenv
 aiohttp
 requests
 aiofiles
+aiomqtt

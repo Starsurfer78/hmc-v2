@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -7,30 +7,40 @@ from typing import List, Optional
 import asyncio
 import contextlib
 import os
+import subprocess
 import sys
 
 from .config import settings
 from .jellyfin_client import JellyfinClient
 from .mpv_controller import MpvController, PlaybackState
 from .policies import load_policies, get_policy, UserPolicy
+from .mqtt_client import MqttClient
+from .admin import router as admin_router
 
 # --- Lifecycle Management ---
 @contextlib.asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup
     print(f"✅ HMC v2.1 Starting...")
     load_policies()
     await jellyfin.start()
-    
+
     if player.audio_device != "mock":
         await player.start()
         await asyncio.sleep(1)
-        
+
+    mqtt.on_command = _handle_mqtt_command
+    await mqtt.start()
+
+    _state_task = asyncio.create_task(_state_push_loop())
+
     yield
-    # Shutdown
+
     print(f"🛑 HMC v2.1 Stopping...")
+    _state_task.cancel()
+    await mqtt.stop()
     await player.stop()
     await jellyfin.close()
+
 
 app = FastAPI(title="HMC v2.1", version="2.1.0", lifespan=lifespan)
 
@@ -41,6 +51,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(admin_router)
+
 # --- Static Files ---
 frontend_dir = os.path.join(os.path.dirname(__file__), "..", "frontend")
 if os.path.exists(frontend_dir):
@@ -48,16 +60,15 @@ if os.path.exists(frontend_dir):
 
 # --- Clients ---
 jellyfin = JellyfinClient()
+mqtt     = MqttClient()
 
 audio_device = settings.AUDIO_DEVICE
 if sys.platform == "win32":
     audio_device = "mock"
     print("⚠️  Windows detected: Using Mock Player (no audio)")
 
-player = MpvController(
-    audio_device=audio_device,
-    max_volume=60
-)
+player = MpvController(audio_device=audio_device, max_volume=60)
+
 
 # --- Models ---
 class Library(BaseModel):
@@ -84,17 +95,94 @@ class Track(BaseModel):
 
 class QueueAction(BaseModel):
     track_id: str
-    album_id: Optional[str] = None  # Optional: for fetching track details
+    album_id: Optional[str] = None
 
-# --- Endpoints ---
+
+# ==========================================
+# 🔁 MQTT Helpers
+# ==========================================
+
+async def _push_state():
+    state = await player.get_state()
+    vol   = await player.get_volume()
+    state["volume"] = vol
+    await mqtt.publish_state(state)
+
+async def _state_push_loop():
+    while True:
+        try:
+            await _push_state()
+        except Exception:
+            pass
+        await asyncio.sleep(5)
+
+async def _handle_mqtt_command(command: str):
+    cmd = command.strip().lower()
+    try:
+        if cmd == "pause":
+            await player.pause()
+        elif cmd in ("resume", "play"):
+            await player.resume()
+            _screen_on()
+        elif cmd == "stop":
+            await player.stop_playback()
+        elif cmd == "play_pause":
+            state = await player.get_state()
+            if state["state"] == "playing":
+                await player.pause()
+            else:
+                await player.resume()
+                _screen_on()
+        elif cmd == "next":
+            await player.next_track()
+        elif cmd == "previous":
+            await player.previous_track()
+        else:
+            print(f"⚠️  Unbekanntes MQTT Kommando: {cmd}")
+            return
+        await _push_state()
+    except Exception as e:
+        print(f"❌ MQTT command handler Fehler: {e}")
+
+
+# ==========================================
+# 💡 Bildschirm-Steuerung (xset DPMS)
+# ==========================================
+
+def _xset(cmd: str):
+    """Führt xset aus — funktioniert nur auf dem Pi (X11), nicht auf Windows."""
+    if sys.platform == "win32":
+        return
+    try:
+        subprocess.run(
+            ["xset"] + cmd.split(),
+            env={**os.environ, "DISPLAY": ":0"},
+            timeout=2,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except Exception as e:
+        print(f"xset Fehler: {e}")
+
+def _screen_off():
+    _xset("dpms force off")
+
+def _screen_on():
+    _xset("dpms force on")
+
+
+# ==========================================
+# 📡 REST Endpoints
+# ==========================================
 
 @app.get("/health")
 def health():
     return {
-        "name": "HMC v2.1", 
-        "backend": "jellyfin", 
+        "name":    "HMC v2.1",
+        "backend": "jellyfin",
         "version": "2.1.0",
-        "status": "online"
+        "status":  "online",
+        "mqtt":    settings.MQTT_DEVICE_ID,
     }
 
 @app.get("/")
@@ -103,25 +191,20 @@ async def root():
 
 @app.get("/libraries", response_model=List[Library])
 async def get_libraries(user_id: Optional[str] = None):
-    policy = get_policy(user_id)
+    policy   = get_policy(user_id)
     all_libs = await jellyfin.get_libraries()
-    
-    allowed = [
+    return [
         Library(id=lib["Id"], name=lib["Name"])
         for lib in all_libs
         if lib["Id"] in policy.allowed_libraries
     ]
-    return allowed
 
 @app.get("/library/{library_id}/artists", response_model=List[Artist])
 async def get_artists(library_id: str, user_id: Optional[str] = None):
     policy = get_policy(user_id)
-    
     if library_id not in policy.allowed_libraries:
         raise HTTPException(403, "Access denied to this library")
-    
     artists = await jellyfin.get_artists(library_id)
-    
     return [
         Artist(
             id=artist["Id"],
@@ -134,7 +217,6 @@ async def get_artists(library_id: str, user_id: Optional[str] = None):
 @app.get("/artist/{artist_id}/albums", response_model=List[Album])
 async def get_albums(artist_id: str):
     albums = await jellyfin.get_albums(artist_id)
-    
     return [
         Album(
             id=album["Id"],
@@ -149,35 +231,47 @@ async def get_albums(artist_id: str):
 async def get_tracks(album_id: str):
     tracks = await jellyfin.get_tracks(album_id)
     return [
-        Track(
-            id=t["id"], 
-            name=t["name"], 
-            duration=t["duration"],
-            overview=t.get("overview"),
-            image=t.get("image")
-        )
+        Track(id=t["id"], name=t["name"], duration=t["duration"],
+              overview=t.get("overview"), image=t.get("image"))
         for t in tracks
     ]
 
 @app.post("/play/album/{album_id}")
 async def play_album(album_id: str, start_track_id: Optional[str] = None):
-    """Legacy endpoint - plays entire album"""
     tracks = await jellyfin.get_tracks(album_id)
     if not tracks:
         raise HTTPException(404, "Album not found or empty")
-    
     start_index = 0
     if start_track_id:
         try:
             start_index = next(i for i, t in enumerate(tracks) if t["id"] == start_track_id)
         except StopIteration:
             pass
-
     try:
         result = await player.play_album(tracks, start_index=start_index)
+        _screen_on()
+        await _push_state()
         return result
     except Exception as e:
         raise HTTPException(500, f"Playback failed: {e}")
+
+
+# ==========================================
+# 💡 Bildschirm-Endpoints (vom Frontend gerufen)
+# ==========================================
+
+@app.post("/screen/off")
+async def screen_off():
+    """Frontend ruft dies wenn der Bildschirmschoner aktiviert werden soll."""
+    _screen_off()
+    return {"status": "off"}
+
+@app.post("/screen/on")
+async def screen_on():
+    """Frontend ruft dies bei Touch-Interaktion wenn der Screen aus war."""
+    _screen_on()
+    return {"status": "on"}
+
 
 # ==========================================
 # 🎵 PLAYBACK QUEUE API
@@ -185,187 +279,150 @@ async def play_album(album_id: str, start_track_id: Optional[str] = None):
 
 @app.get("/queue")
 async def get_queue():
-    """Get current playback queue with current track highlighted."""
-    queue = player.get_queue()
-    current_index = player.current_track_index
-    
     return {
-        "queue": queue,
-        "current_index": current_index,
-        "current_track": player.get_current_track(),
+        "queue":           player.get_queue(),
+        "current_index":   player.current_track_index,
+        "current_track":   player.get_current_track(),
         "upcoming_tracks": player.get_upcoming_tracks(),
-        "total_tracks": len(queue)
+        "total_tracks":    len(player.playback_queue),
     }
 
 @app.post("/queue/play-now")
 async def queue_play_now(action: QueueAction):
-    """
-    Play track immediately.
-    Stops current playback, clears queue, starts new track.
-    """
-    # Fetch track details
     track = await _get_track_by_id(action.track_id, action.album_id)
-    if not track:
-        raise HTTPException(404, "Track not found")
-    
+    if not track: raise HTTPException(404, "Track not found")
     try:
         result = await player.play_now(track)
+        _screen_on()
+        await _push_state()
         return result
     except Exception as e:
         raise HTTPException(500, f"Play now failed: {e}")
 
 @app.post("/queue/play-next")
 async def queue_play_next(action: QueueAction):
-    """
-    Add track to play next (after current track).
-    Does not interrupt current playback.
-    """
     track = await _get_track_by_id(action.track_id, action.album_id)
-    if not track:
-        raise HTTPException(404, "Track not found")
-    
+    if not track: raise HTTPException(404, "Track not found")
     try:
         result = await player.play_next(track)
+        await _push_state()
         return result
     except Exception as e:
         raise HTTPException(500, f"Play next failed: {e}")
 
 @app.post("/queue/add")
 async def queue_add(action: QueueAction):
-    """
-    Add track to end of queue.
-    Does not interrupt current playback.
-    """
     track = await _get_track_by_id(action.track_id, action.album_id)
-    if not track:
-        raise HTTPException(404, "Track not found")
-    
+    if not track: raise HTTPException(404, "Track not found")
     try:
         result = await player.add_to_queue(track)
+        await _push_state()
         return result
     except Exception as e:
         raise HTTPException(500, f"Add to queue failed: {e}")
 
 @app.delete("/queue/{index}")
 async def queue_remove(index: int):
-    """Remove track at index from queue."""
     if index < 0 or index >= len(player.playback_queue):
         raise HTTPException(404, "Index out of range")
-    
     try:
-        success = await player.remove_from_queue(index)
-        if success:
-            return {
-                "status": "removed",
-                "index": index,
-                "queue_length": len(player.playback_queue)
-            }
-        else:
-            raise HTTPException(500, "Remove failed")
+        if await player.remove_from_queue(index):
+            await _push_state()
+            return {"status": "removed", "index": index, "queue_length": len(player.playback_queue)}
+        raise HTTPException(500, "Remove failed")
     except Exception as e:
         raise HTTPException(500, f"Remove failed: {e}")
 
 @app.post("/queue/jump/{index}")
 async def queue_jump(index: int):
-    """Jump to specific track in queue."""
     if index < 0 or index >= len(player.playback_queue):
         raise HTTPException(404, "Index out of range")
-    
     try:
         result = await player.jump_to_track(index)
+        await _push_state()
         return result
     except Exception as e:
         raise HTTPException(500, f"Jump failed: {e}")
 
 @app.post("/queue/clear")
 async def queue_clear():
-    """Clear entire queue and stop playback."""
     try:
         await player.stop_playback()
-        return {
-            "status": "cleared",
-            "queue_length": 0
-        }
+        await _push_state()
+        return {"status": "cleared", "queue_length": 0}
     except Exception as e:
         raise HTTPException(500, f"Clear failed: {e}")
 
+
 # ==========================================
-# 🎵 PLAYBACK CONTROL (Existing + Updated)
+# 🎵 PLAYBACK CONTROL
 # ==========================================
 
 @app.post("/player/pause")
 async def pause():
     await player.pause()
+    await _push_state()
     return await player.get_state()
 
 @app.post("/player/resume")
 async def resume():
     await player.resume()
+    _screen_on()
+    await _push_state()
     return await player.get_state()
 
 @app.post("/player/stop")
 async def stop():
-    """Stop playback and clear queue."""
     await player.stop_playback()
+    await _push_state()
     return await player.get_state()
 
 @app.post("/player/next")
 async def next_track():
     await player.next_track()
+    await _push_state()
     return await player.get_state()
 
 @app.post("/player/previous")
 async def previous_track():
     await player.previous_track()
+    await _push_state()
     return await player.get_state()
 
 @app.post("/player/seek")
 async def seek(state: dict):
     position = state.get("position")
-    if position is None:
-        raise HTTPException(400, "Position required")
+    if position is None: raise HTTPException(400, "Position required")
     await player.seek(position)
+    await _push_state()
     return await player.get_state()
 
 @app.post("/player/volume")
 async def set_volume(state: dict):
     volume = state.get("volume")
-    if volume is None:
-         raise HTTPException(400, "Volume required")
-    
-    policy = get_policy()
-    clamped = min(volume, policy.max_volume)
+    if volume is None: raise HTTPException(400, "Volume required")
+    clamped = min(volume, get_policy().max_volume)
     await player.set_volume(clamped)
+    await _push_state()
     return {"volume": clamped}
 
 @app.get("/player/volume")
 async def get_volume():
-    vol = await player.get_volume()
-    return {"volume": vol}
+    return {"volume": await player.get_volume()}
 
 @app.get("/player/state")
 async def get_state():
     return await player.get_state()
 
+
 # ==========================================
-# 🔧 HELPER FUNCTIONS
+# 🔧 HELPER
 # ==========================================
 
 async def _get_track_by_id(track_id: str, album_id: Optional[str] = None) -> Optional[dict]:
-    """
-    Helper to fetch track details by ID.
-    If album_id is provided, fetch from that album.
-    Otherwise, try to find track directly.
-    """
     if album_id:
-        # Fetch all tracks from album
-        tracks = await jellyfin.get_tracks(album_id)
-        # Find matching track
-        for track in tracks:
+        for track in await jellyfin.get_tracks(album_id):
             if track["id"] == track_id:
                 return track
         return None
-    else:
-        # Try to fetch track directly (might not work for all Jellyfin setups)
-        # For now, we require album_id
-        raise HTTPException(400, "album_id required for track lookup")
+    raise HTTPException(400, "album_id required for track lookup")

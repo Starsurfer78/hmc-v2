@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>HMC v2.1 FINAL</title>
-    <link rel="stylesheet" href="/static/styles.css?v=2.4">
+    <title>HMC v2.1</title>
+    <link rel="stylesheet" href="/static/styles.css?v=2.5">
 </head>
 <body>
     <div id="app">
@@ -23,7 +23,12 @@
                 </button>
             </div>
             <h1 id="page-title">HMC Player</h1>
-            <div id="status">Ready</div>
+            <div style="display:flex;align-items:center;gap:0.75rem;margin-left:auto;">
+                <div id="status">Ready</div>
+                <button id="btn-admin" title="Admin" onclick="openAdminPanel()">
+                    <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 4l5 2.18V11c0 3.5-2.33 6.79-5 7.93-2.67-1.14-5-4.43-5-7.93V7.18L12 5z"/></svg>
+                </button>
+            </div>
         </header>
         
         <main id="content">
@@ -85,6 +90,105 @@
             </div>
         </footer>
     </div>
-    <script src="/static/app.js?v=2.4"></script>
+
+    <!-- ================================================
+         ADMIN PANEL MODAL
+         ================================================ -->
+    <div id="admin-overlay" class="admin-overlay" style="display:none">
+        <div class="admin-modal">
+
+            <!-- PIN-Screen -->
+            <div id="admin-pin-screen">
+                <div class="admin-modal-header">
+                    <span class="admin-title-icon">🔐</span>
+                    <h2>Admin</h2>
+                </div>
+                <p class="admin-subtitle">PIN eingeben</p>
+                <div class="pin-dots" id="pin-dots">
+                    <span></span><span></span><span></span><span></span>
+                </div>
+                <div class="pin-pad">
+                    <button onclick="pinInput('1')">1</button>
+                    <button onclick="pinInput('2')">2</button>
+                    <button onclick="pinInput('3')">3</button>
+                    <button onclick="pinInput('4')">4</button>
+                    <button onclick="pinInput('5')">5</button>
+                    <button onclick="pinInput('6')">6</button>
+                    <button onclick="pinInput('7')">7</button>
+                    <button onclick="pinInput('8')">8</button>
+                    <button onclick="pinInput('9')">9</button>
+                    <button onclick="pinClear()" class="pin-action">✕</button>
+                    <button onclick="pinInput('0')">0</button>
+                    <button onclick="pinBackspace()" class="pin-action">⌫</button>
+                </div>
+                <p id="pin-error" class="pin-error" style="display:none">Falscher PIN</p>
+                <button class="admin-close-btn" onclick="closeAdminPanel()">Abbrechen</button>
+            </div>
+
+            <!-- Settings-Screen -->
+            <div id="admin-settings-screen" style="display:none">
+                <div class="admin-modal-header">
+                    <span class="admin-title-icon">⚙️</span>
+                    <h2>Einstellungen</h2>
+                    <button class="admin-logout-btn" onclick="adminLogout()" title="Abmelden">🔒</button>
+                </div>
+
+                <!-- Tabs -->
+                <div class="admin-tabs">
+                    <button class="admin-tab active" onclick="switchTab('general')">Allgemein</button>
+                    <button class="admin-tab" onclick="switchTab('security')">Sicherheit</button>
+                    <button class="admin-tab" onclick="switchTab('ota')">Update</button>
+                </div>
+
+                <!-- Tab: Allgemein -->
+                <div id="tab-general" class="admin-tab-content">
+                    <label class="admin-label">Gerätename (HA-Anzeigename)
+                        <input type="text" id="set-device-name" class="admin-input" placeholder="z.B. HMC Kinderzimmer">
+                    </label>
+                    <label class="admin-label">Max. Lautstärke (0–100)
+                        <div style="display:flex;align-items:center;gap:1rem;">
+                            <input type="range" id="set-max-volume" min="0" max="100" value="60" style="flex:1">
+                            <span id="set-max-volume-val" style="min-width:3ch;color:var(--accent-color);font-weight:700">60</span>
+                        </div>
+                    </label>
+                    <label class="admin-label">Jellyfin URL
+                        <input type="text" id="set-jellyfin-url" class="admin-input" placeholder="http://192.168.178.X:8096">
+                    </label>
+                    <label class="admin-label">Audio-Device (ALSA)
+                        <input type="text" id="set-audio-device" class="admin-input" placeholder="hw:1,0">
+                    </label>
+                    <button class="admin-btn-primary" onclick="saveSettings()">Speichern</button>
+                </div>
+
+                <!-- Tab: Sicherheit -->
+                <div id="tab-security" class="admin-tab-content" style="display:none">
+                    <p class="admin-hint">Neuen Admin-PIN setzen (mind. 4 Ziffern)</p>
+                    <label class="admin-label">Neuer PIN
+                        <input type="password" id="set-new-pin" class="admin-input" placeholder="••••" maxlength="8" inputmode="numeric">
+                    </label>
+                    <label class="admin-label">PIN bestätigen
+                        <input type="password" id="set-confirm-pin" class="admin-input" placeholder="••••" maxlength="8" inputmode="numeric">
+                    </label>
+                    <button class="admin-btn-primary" onclick="saveNewPin()">PIN ändern</button>
+                    <p id="pin-change-msg" style="display:none;margin-top:0.5rem;text-align:center;font-size:0.9rem"></p>
+                </div>
+
+                <!-- Tab: OTA Update -->
+                <div id="tab-ota" class="admin-tab-content" style="display:none">
+                    <div id="ota-status-box" class="ota-status-box">
+                        <div class="ota-loading">Lade Git-Status...</div>
+                    </div>
+                    <button class="admin-btn-primary" id="btn-ota-update" onclick="startOtaUpdate()" style="display:none">
+                        🔄 Update installieren
+                    </button>
+                    <div id="ota-log" class="ota-log" style="display:none"></div>
+                </div>
+
+                <button class="admin-close-btn" onclick="closeAdminPanel()">Schließen</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/app.js?v=2.5"></script>
 </body>
 </html>
