@@ -41,14 +41,21 @@ class RuntimeSettingsStore:
         }
 
     def _load_or_initialize(self) -> Dict[str, Any]:
+        defaults = self._defaults()
         if self.file_path.exists():
             try:
-                return json.loads(self.file_path.read_text(encoding="utf-8"))
+                loaded = json.loads(self.file_path.read_text(encoding="utf-8"))
+                merged = {**defaults, **loaded}
+                if merged.keys() != loaded.keys():
+                    # Bestehende Installation von vor einer neueren Version:
+                    # fehlende Felder (z.B. neu eingefuehrte Settings) aus
+                    # den .env-Defaults ergaenzen und persistieren.
+                    self._save(merged)
+                return merged
             except Exception:
                 pass
-        data = self._defaults()
-        self._save(data)
-        return data
+        self._save(defaults)
+        return defaults
 
     def _save(self, data: Dict[str, Any]) -> None:
         self.file_path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")

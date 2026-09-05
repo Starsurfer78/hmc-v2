@@ -87,11 +87,13 @@ python3 setup.py
 
 ### 4. Einmalige sudo-Berechtigung für OTA
 
-Damit das Admin-Panel den Service nach einem Update automatisch neu starten kann:
+Damit das Admin-Panel den Service nach einem Update automatisch neu starten kann (`$(whoami)` trägt automatisch den richtigen Benutzernamen ein — nicht durch `pi` ersetzen, falls dein Nutzer anders heißt):
 ```bash
-echo "pi ALL=(ALL) NOPASSWD: /bin/systemctl restart hmc" | sudo tee /etc/sudoers.d/hmc-restart
+echo "$(whoami) ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart hmc" | sudo tee /etc/sudoers.d/hmc-restart
 sudo chmod 440 /etc/sudoers.d/hmc-restart
+sudo visudo -c
 ```
+> Bookworm nutzt usrmerge — `systemctl` liegt unter `/usr/bin`, `/bin/systemctl` ist nur ein Symlink und wird von sudoers nicht als gleichwertig erkannt. Mit `/bin/systemctl` in der Regel fragt `sudo` trotz korrekter Datei weiter nach dem Passwort.
 
 ### 5. Neustart
 
