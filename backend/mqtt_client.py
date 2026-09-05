@@ -107,6 +107,14 @@ class MqttClient:
                 json.dumps(payload),
                 retain=True,
             )
+            # Republish "online" bei jedem State-Push: ein Last-Will "offline"
+            # einer vorherigen, unsauber beendeten Verbindung kann erst mit
+            # Verzoegerung (Broker-Keepalive-Timeout) eintreffen und dabei ein
+            # bereits gesetztes "online" ueberschreiben. So korrigiert sich
+            # das innerhalb von maximal einem Push-Intervall von selbst.
+            await self._client.publish(
+                self.availability_topic, "online", retain=True
+            )
         except Exception as e:
             logger.warning(f"MQTT publish_state Fehler: {e}")
 
