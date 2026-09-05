@@ -18,7 +18,10 @@ from .const import PLATFORMS
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    return await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    # async_forward_entry_setups() itself returns None - async_setup_entry
+    # must return an explicit bool, or HA logs "did not return boolean".
+    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    return True
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
