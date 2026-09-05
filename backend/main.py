@@ -11,18 +11,19 @@ import subprocess
 import sys
 
 from .config import settings
+from .settings_store import get_settings_store
 from .jellyfin_client import JellyfinClient
 from .mpv_controller import MpvController, PlaybackState
-from .policies import load_policies, get_policy, UserPolicy
+from .policies import get_policy
 from .mqtt_client import MqttClient
-from .admin import router as admin_router
+from .admin import router as admin_router, bind_runtime as admin_bind_runtime
 
 # --- Lifecycle Management ---
 @contextlib.asynccontextmanager
 async def lifespan(app: FastAPI):
     print(f"✅ HMC v2.1 Starting...")
-    load_policies()
     await jellyfin.start()
+    admin_bind_runtime(jellyfin, player)
 
     if player.audio_device != "mock":
         await player.start()
@@ -66,12 +67,14 @@ if os.path.exists(frontend_dir):
 jellyfin = JellyfinClient()
 mqtt     = MqttClient()
 
-audio_device = settings.AUDIO_DEVICE
+_runtime_settings = get_settings_store().get_all()
+
+audio_device = _runtime_settings["audio_device"]
 if sys.platform == "win32":
     audio_device = "mock"
     print("⚠️  Windows detected: Using Mock Player (no audio)")
 
-player = MpvController(audio_device=audio_device, max_volume=60)
+player = MpvController(audio_device=audio_device, max_volume=_runtime_settings["max_volume"])
 
 
 # --- Models ---

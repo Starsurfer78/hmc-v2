@@ -130,6 +130,19 @@ class MpvController:
         self.state = PlaybackState.STOPPED
         self.clear_queue()
 
+    async def reconfigure_audio_device(self, new_device: str):
+        """
+        Übernimmt ein geändertes Audio-Device aus dem Admin-Bereich.
+        MPV kann das Ausgabegerät nicht live wechseln, daher: sauber stoppen
+        (beendet laufende Wiedergabe, leert die Queue) und mit dem neuen
+        Gerät neu starten.
+        """
+        if new_device == self.audio_device:
+            return
+        await self.stop()
+        self.audio_device = new_device
+        await self.start()
+
     # ==========================================
     # 🎵 PLAYBACK QUEUE MANAGEMENT
     # ==========================================

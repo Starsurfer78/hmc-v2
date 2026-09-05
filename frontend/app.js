@@ -281,7 +281,7 @@ async function loadLibraries() {
     try {
         const res = await fetch(`${API_BASE}/libraries`);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        renderGrid(await res.json(), (lib) => loadArtists(lib));
+        renderGrid(await res.json(), (lib) => loadArtists(lib), '🔒', 'Noch nichts freigegeben. Bitte einen Erwachsenen fragen!');
     } catch (e) { showError(e); }
 }
 
@@ -292,7 +292,7 @@ async function loadArtists(lib) {
     try {
         const res = await fetch(`${API_BASE}/library/${lib.id}/artists`);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        renderGrid(await res.json(), (a) => loadAlbums(a));
+        renderGrid(await res.json(), (a) => loadAlbums(a), '🎤', 'Diese Bibliothek ist noch leer.');
     } catch (e) { showError(e); }
 }
 
@@ -303,7 +303,7 @@ async function loadAlbums(artist) {
     try {
         const res = await fetch(`${API_BASE}/artist/${artist.id}/albums`);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        renderGrid(await res.json(), (album) => openAlbum(album));
+        renderGrid(await res.json(), (album) => openAlbum(album), '💿', 'Für diesen Künstler gibt es noch keine Alben.');
     } catch (e) { showError(e); }
 }
 
@@ -349,12 +349,12 @@ function renderTracklist(album, tracks) {
         ? `<img src="${album.image}" alt="${album.name}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"><div class="album-placeholder" style="display:none">🎵</div>`
         : `<div class="album-placeholder">🎵</div>`;
     const trackRows = tracks.map((t, i) => `
-        <div class="track-row" onclick="openTrack(${i})">
+        <div class="track-row" data-index="${i}">
             <span class="track-num">${i+1}</span>
             <span class="track-name">${t.name}</span>
             <span class="track-duration">${formatDuration(t.duration)}</span>
             <button class="track-menu-trigger" onclick="event.stopPropagation();showTrackMenu(currentTracks[${i}],'${album.id}')">⋮</button>
-        </div>`).join('');
+        </div>`).join('') || '<div class="empty-state"><span class="empty-icon">🎧</span><span class="empty-text">Dieses Album hat keine Titel.</span></div>';
     content.innerHTML = `
         <div class="album-detail-view">
             <div class="album-sidebar">
@@ -370,6 +370,9 @@ function renderTracklist(album, tracks) {
                 <div class="track-list">${trackRows}</div>
             </div>
         </div>`;
+    content.querySelectorAll('.track-row').forEach(row => {
+        bindTap(row, () => openTrack(Number(row.dataset.index)));
+    });
 }
 
 function formatDuration(sec) {
@@ -420,15 +423,36 @@ async function setVolume(vol) {
 // 🔧 HELPERS
 // ==========================================
 
-function renderGrid(items, onClick) {
+// Bindet einen Tap-Handler, der einen Scroll-Wisch nicht als Tap wertet:
+// nur auslösen, wenn sich der Finger zwischen Antippen und Loslassen nicht
+// mehr als TAP_MOVE_THRESHOLD px bewegt hat.
+const TAP_MOVE_THRESHOLD = 10;
+function bindTap(el, handler) {
+    let startX = 0, startY = 0, moved = false;
+    el.addEventListener('pointerdown', (e) => {
+        startX = e.clientX; startY = e.clientY; moved = false;
+    }, { passive: true });
+    el.addEventListener('pointermove', (e) => {
+        if (Math.abs(e.clientX - startX) > TAP_MOVE_THRESHOLD || Math.abs(e.clientY - startY) > TAP_MOVE_THRESHOLD) {
+            moved = true;
+        }
+    }, { passive: true });
+    el.addEventListener('click', (e) => { if (!moved) handler(e); });
+}
+
+function renderGrid(items, onClick, emptyIcon = '🎵', emptyText = 'Hier ist noch nichts drin.') {
     content.innerHTML = '';
+    if (!items.length) {
+        content.innerHTML = `<div class="empty-state"><span class="empty-icon">${emptyIcon}</span><span class="empty-text">${emptyText}</span></div>`;
+        return;
+    }
     items.forEach(item => {
         const el = document.createElement('div');
         el.className = 'card';
         el.innerHTML = item.image
             ? `<img src="${item.image}" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"><div class="album-placeholder" style="display:none">🎵</div><div class="title">${item.name}</div>`
             : `<div class="album-placeholder">🎵</div><div class="title">${item.name}</div>`;
-        el.onclick = () => onClick(item);
+        bindTap(el, () => onClick(item));
         content.appendChild(el);
     });
 }
@@ -586,7 +610,7 @@ function closeAdminPanel() {
 function adminLogout() { closeAdminPanel(); }
 
 function pinInput(digit) {
-    if (_adminPin.length >= 8) return;
+    if (_adminPin.length >= 4) return;
     _adminPin += digit;
     _renderPinDots();
     if (_adminPin.length >= 4) _tryPin();
@@ -629,6 +653,9 @@ async function _loadSettings() {
         const data = await fetch(`${API_BASE}/admin/settings?token=${_adminToken}`).then(r => r.json());
         document.getElementById('set-device-name').value        = data.device_name  || '';
         document.getElementById('set-jellyfin-url').value       = data.jellyfin_url || '';
+        document.getElementById('set-jellyfin-api-key').value   = '';
+        document.getElementById('jellyfin-api-key-status').innerText =
+            data.jellyfin_api_key_present ? '🔑 API-Key ist gesetzt' : '⚠️ Kein API-Key gesetzt';
         document.getElementById('set-audio-device').value       = data.audio_device || '';
         document.getElementById('set-max-volume').value         = data.max_volume   ?? 60;
         document.getElementById('set-max-volume-val').innerText = data.max_volume   ?? 60;
@@ -643,11 +670,12 @@ async function saveSettings() {
         const res = await fetch(`${API_BASE}/admin/settings`, {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                token:        _adminToken,
-                device_name:  document.getElementById('set-device-name').value,
-                jellyfin_url: document.getElementById('set-jellyfin-url').value,
-                audio_device: document.getElementById('set-audio-device').value,
-                max_volume:   parseInt(document.getElementById('set-max-volume').value),
+                token:            _adminToken,
+                device_name:      document.getElementById('set-device-name').value,
+                jellyfin_url:     document.getElementById('set-jellyfin-url').value,
+                jellyfin_api_key: document.getElementById('set-jellyfin-api-key').value || null,
+                audio_device:     document.getElementById('set-audio-device').value,
+                max_volume:       parseInt(document.getElementById('set-max-volume').value),
             })
         });
         if (!res.ok) throw new Error();
@@ -660,7 +688,7 @@ async function saveNewPin() {
     const confirmPin = document.getElementById('set-confirm-pin').value.trim();
     const msg        = document.getElementById('pin-change-msg');
     msg.style.display = 'block';
-    if (newPin.length < 4)     { msg.style.color = '#ff6b6b'; msg.innerText = 'PIN muss mind. 4 Ziffern haben'; return; }
+    if (newPin.length !== 4 || !/^\d{4}$/.test(newPin)) { msg.style.color = '#ff6b6b'; msg.innerText = 'PIN muss genau 4 Ziffern haben'; return; }
     if (newPin !== confirmPin) { msg.style.color = '#ff6b6b'; msg.innerText = 'PINs stimmen nicht überein';     return; }
     try {
         const res = await fetch(`${API_BASE}/admin/settings`, {

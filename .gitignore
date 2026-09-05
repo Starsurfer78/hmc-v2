@@ -31,6 +31,7 @@ ENV/
 .env
 .env.local
 .env.*.local
+backend/admin_settings.json
 plex_hmc_player/backend/admin_settings.json
 
 # IDEs

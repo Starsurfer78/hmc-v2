@@ -23,47 +23,49 @@ Component. Details siehe `tasks/lessons.md`.
 
 ## EPIC A – Admin Settings: Alles ueber Admin konfigurierbar (und wirksam)
 
+Groesstenteils umgesetzt am 2026-09-05 (neues `backend/settings_store.py`, nach Vorbild von `plex_hmc_player/backend/runtime_settings.py`). MQTT-Felder bleiben bewusst ausgeklammert (kein MQTT-Tab im Admin-Panel bisher) — separate spaetere Erweiterung.
+
 ### A1. Single Source of Truth fuer Runtime-Config
-- [ ] Admin-Settings als primaere Quelle definieren (Fallback: `.env` nur fuer Erststart)
-- [ ] Migration/Bootstrap: Beim ersten Start `admin_settings.json` mit Werten aus `.env` befuellen
-- [ ] `admin_settings.json` um fehlende Felder erweitern:
-  - [ ] Jellyfin: URL, API-Key
-  - [ ] Bibliotheken: allowed_libraries (IDs)
-  - [ ] Audio: audio_device, max_volume
-  - [ ] MQTT: broker, port, user, password, device_id, device_name
-- [ ] Secrets-Handling fuer API-Key/MQTT-Passwort definieren (nicht loggen, keine Rueckgabe an Frontend ausser wo zwingend)
+- [x] Admin-Settings als primaere Quelle definiert (Fallback: `.env` nur fuer Erststart) [2026-09-05]
+- [x] Migration/Bootstrap: Beim ersten Start `admin_settings.json` mit Werten aus `.env` befuellt [2026-09-05]
+- `admin_settings.json` um fehlende Felder erweitert:
+  - [x] Jellyfin: URL, API-Key [2026-09-05]
+  - [x] Bibliotheken: allowed_libraries (IDs) [2026-09-05]
+  - [x] Audio: audio_device, max_volume [2026-09-05]
+  - [ ] MQTT: broker, port, user, password, device_id, device_name — bewusst nicht umgesetzt, kein MQTT-Tab vorhanden
+- [x] Secrets-Handling fuer Jellyfin-API-Key definiert (nie im Klartext zurueckgegeben, nur `jellyfin_api_key_present: bool`) [2026-09-05] — MQTT-Passwort-Handling entfaellt, da MQTT nicht im Scope
 
 ### A2. Admin API erweitern
-- [ ] `GET /admin/settings`: Rueckgabe so anpassen, dass sensible Felder maskiert sind (z.B. api_key_present: true)
-- [ ] `POST /admin/settings`: Update-Validierung (URL-Format, Port-Range, Device-ID-Charset, max_volume 0-100)
-- [ ] Neue Admin-Endpunkte:
-  - [ ] `POST /admin/jellyfin/test` (URL+Key testen, Rueckgabe: ok/fehler + gefundene Libraries)
-  - [ ] `POST /admin/mqtt/test` (Broker erreichbar, optional Auth)
-  - [ ] Optional: `POST /admin/apply` (geaenderte Settings sofort aktivieren)
+- [x] `GET /admin/settings`: sensible Felder maskiert (`jellyfin_api_key_present`, PIN-Hash nie zurueckgegeben) [2026-09-05]
+- [ ] `POST /admin/settings`: Update-Validierung fuer URL-Format/Port-Range/Device-ID-Charset weiterhin offen (max_volume 0-100 Clamp existiert bereits)
+- [ ] Neue Admin-Endpunkte weiterhin offen:
+  - [ ] `POST /admin/jellyfin/test` (eigener Test-Button/-Endpunkt; aktuell nur indirekt ueber den Bibliotheken-Tab pruefbar)
+  - [ ] `POST /admin/mqtt/test`
+  - [ ] Optional: `POST /admin/apply`
 
 ### A3. Runtime-Reconfigure (ohne Neustart, soweit sinnvoll)
-- [ ] Jellyfin: Client bei URL/Key-Aenderung sauber neu initialisieren (Session schliessen, neu verbinden)
-- [ ] Policies: allowed_libraries und max_volume aus Admin Settings laden und bei Aenderung live anwenden
-- [ ] Player: max_volume/audiodevice-Aenderung definieren:
-  - [ ] max_volume: sofort wirksam (clamp + mpv volume set)
-  - [ ] audio_device: erfordert Player-Restart (kontrolliert, Queue/State Verhalten definieren)
-- [ ] MQTT: Broker/Device-ID/etc. Aenderung erfordert mqtt reconnect (Client stop/start)
-- [ ] Health/State: `/health` um Konfig-Quelle und aktive Werte ergaenzen (ohne Secrets)
+- [x] Jellyfin: Client bei URL/Key-Aenderung sauber neu initialisiert (Session schliessen, neu verbinden) [2026-09-05]
+- [x] Policies: allowed_libraries und max_volume aus Admin Settings, live bei jedem Aufruf gelesen [2026-09-05]
+- Player: max_volume/audiodevice-Aenderung:
+  - [x] max_volume: sofort wirksam (Clamp in `/player/volume` liest live aus dem Store) [2026-09-05]
+  - [x] audio_device: kontrollierter Player-Neustart (`reconfigure_audio_device`, stoppt Wiedergabe + leert Queue) [2026-09-05]
+- [ ] MQTT: Broker/Device-ID/etc. Aenderung erfordert mqtt reconnect — entfaellt aktuell (kein MQTT-Tab)
+- [ ] Health/State: `/health` um Konfig-Quelle ergaenzen — weiterhin offen (aktuell nur `mqtt_connected`)
 
 ### A4. Admin Frontend erweitern
-- [ ] Tab "Allgemein" um Jellyfin API-Key + Test-Button erweitern
-- [ ] Tab "Bibliotheken" robust machen:
-  - [ ] Libraries immer aus aktuell konfiguriertem Jellyfin live laden (nicht nur aus `.env`)
-  - [ ] IDs speichern, nicht Namen
-- [ ] Tab "MQTT" hinzufuegen (oder in Allgemein integrieren): Felder + Test + Save
+- [x] Tab "Allgemein" um Jellyfin API-Key erweitert (maskiertes Feld, "gesetzt: ja/nein") [2026-09-05] — dedizierter Test-Button weiterhin offen
+- Tab "Bibliotheken":
+  - [x] Libraries werden live vom aktuell konfigurierten Jellyfin geladen (nicht mehr nur `.env`) [2026-09-05]
+  - [x] IDs werden gespeichert, nicht Namen (unveraendert korrekt)
+- [ ] Tab "MQTT" hinzufuegen — weiterhin offen, separate Erweiterung
 
 ---
 
 ## EPIC B – UI fuer 600x800 (Touch) optimieren
 
 ### B1. Scroll/Tap Konflikte beheben
-- [ ] Grid-Cards: Scroll darf nicht als Click/Tap ausloesen (Pointer-Threshold / Touch-Handling)
-- [ ] Wisch-Scroll in Listen und Overlays verbessern (groessere Scroll-Flaechen, weniger "dead zones")
+- [x] Grid-Cards und Trackliste: Pointer-Bewegungsschwelle ergaenzt (`bindTap` in app.js) — ein Scroll-Wisch loest keinen Tap mehr aus [2026-09-05]
+- [ ] Wisch-Scroll in Listen und Overlays weiter verbessern (groessere Scroll-Flaechen, weniger "dead zones") — nicht weiter untersucht
 
 ### B2. Navigation & Landing verbessern
 - [ ] Startscreen immer "Bibliotheken" (kein versehentliches "reinrutschen" in eine Bibliothek)
@@ -72,8 +74,9 @@ Component. Details siehe `tasks/lessons.md`.
 
 ### B3. Layout fuer 600x800
 - [ ] CSS Breakpoints fuer 600x800: Kartenanzahl, Abstaende, Schriftgroessen, Footer-Hoehe
-- [ ] Player-Leiste: Touch-Targets vergroessern, Progress/Seek besser bedienbar
-- [ ] Queue-Overlay und Admin-Modal: scrollbare Container sauber (kein Scroll-Lock)
+- [x] Player-Leiste: Vor/Stopp/Weiter- und Lautstaerke-Buttons auf 44px Touch-Ziel vergroessert [2026-09-05] — Progress/Seek-Bedienbarkeit nicht weiter angefasst
+- [x] Header-Titel bei langen Namen: einzeilige Kuerzung mit Ellipsis statt Umbruch/Abschneiden am oberen Rand [2026-09-05]
+- [ ] Queue-Overlay und Admin-Modal: scrollbare Container sauber (kein Scroll-Lock) — nicht weiter untersucht
 
 ---
 

@@ -24,7 +24,7 @@
             </div>
             <h1 id="page-title">HMC Player</h1>
             <div style="display:flex;align-items:center;gap:0.75rem;margin-left:auto;">
-                <div id="status">Ready</div>
+                <div id="status">Bereit</div>
                 <button id="btn-admin" title="Admin" onclick="openAdminPanel()">
                     <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 4l5 2.18V11c0 3.5-2.33 6.79-5 7.93-2.67-1.14-5-4.43-5-7.93V7.18L12 5z"/></svg>
                 </button>
@@ -143,6 +143,10 @@
                     <label class="admin-label">Jellyfin URL
                         <input type="text" id="set-jellyfin-url" class="admin-input" placeholder="http://192.168.178.X:8096">
                     </label>
+                    <label class="admin-label">Jellyfin API-Key
+                        <input type="password" id="set-jellyfin-api-key" class="admin-input" placeholder="Leer lassen = unverändert">
+                        <span id="jellyfin-api-key-status" class="admin-hint" style="margin:0.35rem 0 0"></span>
+                    </label>
                     <label class="admin-label">Audio-Device (ALSA)
                         <input type="text" id="set-audio-device" class="admin-input" placeholder="hw:1,0">
                     </label>
@@ -166,12 +170,12 @@
 
                 <!-- Tab: Sicherheit -->
                 <div id="tab-security" class="admin-tab-content" style="display:none">
-                    <p class="admin-hint">Neuen Admin-PIN setzen (mind. 4 Ziffern)</p>
+                    <p class="admin-hint">Neuen Admin-PIN setzen (genau 4 Ziffern)</p>
                     <label class="admin-label">Neuer PIN
-                        <input type="password" id="set-new-pin" class="admin-input" placeholder="••••" maxlength="8" inputmode="numeric">
+                        <input type="password" id="set-new-pin" class="admin-input" placeholder="••••" maxlength="4" inputmode="numeric">
                     </label>
                     <label class="admin-label">PIN bestätigen
-                        <input type="password" id="set-confirm-pin" class="admin-input" placeholder="••••" maxlength="8" inputmode="numeric">
+                        <input type="password" id="set-confirm-pin" class="admin-input" placeholder="••••" maxlength="4" inputmode="numeric">
                     </label>
                     <button class="admin-btn-primary" onclick="saveNewPin()">PIN ändern</button>
                     <p id="pin-change-msg" style="display:none;margin-top:0.5rem;text-align:center;font-size:0.9rem"></p>

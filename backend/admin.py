@@ -12,7 +12,6 @@ Endpoints für das Admin-Panel (PIN-geschützt im Frontend).
 """
 
 import asyncio
-import hashlib
 import json
 import logging
 import secrets
@@ -25,6 +24,8 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
+from .settings_store import get_settings_store, hash_pin
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -32,45 +33,27 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 # ------------------------------------------------------------
 # Pfade
 # ------------------------------------------------------------
-_BASE_DIR      = Path(__file__).parent.parent
-_SETTINGS_FILE = Path(__file__).parent / "admin_settings.json"
-_VENV_PIP      = _BASE_DIR / "venv" / "bin" / "pip"
+_BASE_DIR = Path(__file__).parent.parent
+_VENV_PIP = _BASE_DIR / "venv" / "bin" / "pip"
 
 _active_token: Optional[str] = None
+
+# Laufende Instanzen, damit Admin-Änderungen sofort wirksam werden.
+# Wird von main.py beim Start per bind_runtime() gesetzt (vermeidet
+# einen Zirkularimport zwischen admin.py und main.py).
+_jellyfin_client = None
+_player = None
+
+
+def bind_runtime(jellyfin_client, player):
+    global _jellyfin_client, _player
+    _jellyfin_client = jellyfin_client
+    _player = player
 
 
 # ------------------------------------------------------------
 # Hilfsfunktionen
 # ------------------------------------------------------------
-
-def _hash_pin(pin: str) -> str:
-    return hashlib.pbkdf2_hmac("sha256", pin.encode(), b"hmc-salt", 100_000).hex()
-
-
-def _load_settings() -> dict:
-    if _SETTINGS_FILE.exists():
-        try:
-            return json.loads(_SETTINGS_FILE.read_text(encoding="utf-8"))
-        except Exception:
-            pass
-    defaults = {
-        "admin_pin_hash":    _hash_pin("1234"),
-        "device_name":       "HMC Player",
-        "max_volume":        60,
-        "allowed_libraries": [],
-        "jellyfin_url":      "",
-        "audio_device":      "hw:1,0",
-        "ota_branch":        "main",
-    }
-    _save_settings(defaults)
-    return defaults
-
-
-def _save_settings(data: dict):
-    _SETTINGS_FILE.write_text(
-        json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8"
-    )
-
 
 def _check_token(token: str):
     if not _active_token or not secrets.compare_digest(token, _active_token):
@@ -91,6 +74,7 @@ class SettingsUpdate(BaseModel):
     max_volume:        Optional[int]  = None
     allowed_libraries: Optional[list] = None
     jellyfin_url:      Optional[str]  = None
+    jellyfin_api_key:  Optional[str]  = None
     audio_device:      Optional[str]  = None
     ota_branch:        Optional[str]  = None
     new_pin:           Optional[str]  = None
@@ -107,9 +91,9 @@ class OtaRequest(BaseModel):
 @router.post("/verify-pin")
 async def verify_pin(body: PinVerifyRequest):
     global _active_token
-    s        = _load_settings()
-    pin_hash = _hash_pin(body.pin.strip())
-    if not secrets.compare_digest(pin_hash, s.get("admin_pin_hash", "")):
+    data     = get_settings_store().get_all()
+    pin_hash = hash_pin(body.pin.strip())
+    if not secrets.compare_digest(pin_hash, data.get("admin_pin_hash", "")):
         raise HTTPException(403, "Falscher PIN")
     _active_token = secrets.token_hex(32)
     return {"token": _active_token}
@@ -118,29 +102,27 @@ async def verify_pin(body: PinVerifyRequest):
 @router.get("/settings")
 async def get_settings(token: str):
     _check_token(token)
-    data = _load_settings()
-    return {k: v for k, v in data.items() if k != "admin_pin_hash"}
+    return get_settings_store().get_public()
 
 
 @router.post("/settings")
 async def save_settings(body: SettingsUpdate):
     _check_token(body.token)
-    data = _load_settings()
 
-    if body.device_name       is not None: data["device_name"]       = body.device_name
-    if body.max_volume        is not None: data["max_volume"]        = max(0, min(100, body.max_volume))
-    if body.allowed_libraries is not None: data["allowed_libraries"] = body.allowed_libraries
-    if body.jellyfin_url      is not None: data["jellyfin_url"]      = body.jellyfin_url.rstrip("/")
-    if body.audio_device      is not None: data["audio_device"]      = body.audio_device
-    if body.ota_branch        is not None: data["ota_branch"]        = body.ota_branch
+    payload = body.model_dump(exclude={"token"}, exclude_none=True)
+    try:
+        get_settings_store().update(payload)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
 
-    if body.new_pin:
-        pin = body.new_pin.strip()
-        if len(pin) < 4:
-            raise HTTPException(400, "PIN muss mindestens 4 Zeichen haben")
-        data["admin_pin_hash"] = _hash_pin(pin)
+    # Laufende Instanzen sofort auf die neuen Werte umstellen.
+    if body.jellyfin_url is not None or body.jellyfin_api_key is not None:
+        data = get_settings_store().get_all()
+        if _jellyfin_client is not None:
+            await _jellyfin_client.reconfigure(data["jellyfin_url"], data["jellyfin_api_key"])
+    if body.audio_device is not None and _player is not None:
+        await _player.reconfigure_audio_device(body.audio_device)
 
-    _save_settings(data)
     return {"status": "ok"}
 
 
@@ -156,27 +138,14 @@ async def get_jellyfin_libraries(token: str):
     """
     _check_token(token)
 
-    settings = _load_settings()
-    jellyfin_url = settings.get("jellyfin_url", "").rstrip("/")
-    allowed      = set(settings.get("allowed_libraries", []))
-
-    # Jellyfin-URL aus .env als Fallback (wird beim ersten Start noch nicht
-    # in admin_settings.json stehen)
-    if not jellyfin_url:
-        try:
-            from .config import settings as env_settings
-            jellyfin_url = env_settings.JELLYFIN_URL.rstrip("/")
-        except Exception:
-            pass
+    data         = get_settings_store().get_all()
+    jellyfin_url = data.get("jellyfin_url", "").rstrip("/")
+    api_key      = data.get("jellyfin_api_key", "")
+    allowed      = set(data.get("allowed_libraries", []))
 
     if not jellyfin_url:
         raise HTTPException(503, "Jellyfin URL nicht konfiguriert")
-
-    # API-Key ermitteln
-    try:
-        from .config import settings as env_settings
-        api_key = env_settings.JELLYFIN_API_KEY
-    except Exception:
+    if not api_key:
         raise HTTPException(503, "Jellyfin API-Key nicht konfiguriert")
 
     headers = {"X-Emby-Token": api_key, "Accept": "application/json"}

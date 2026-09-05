@@ -1,20 +1,21 @@
 import aiohttp
 import logging
 from typing import List, Dict, Optional
-from .config import settings
+from .settings_store import get_settings_store
 
 logger = logging.getLogger(__name__)
 
 class JellyfinClient:
     def __init__(self):
-        self.url = settings.JELLYFIN_URL.rstrip('/')
-        self.api_key = settings.JELLYFIN_API_KEY
+        data = get_settings_store().get_all()
+        self.url = data["jellyfin_url"].rstrip('/')
+        self.api_key = data["jellyfin_api_key"]
         self.headers = {
             "X-Emby-Token": self.api_key,
             "Accept": "application/json"
         }
         self.session: Optional[aiohttp.ClientSession] = None
-    
+
     async def start(self):
         """Initialize the client session"""
         if not self.session:
@@ -26,6 +27,18 @@ class JellyfinClient:
         if self.session:
             await self.session.close()
             self.session = None
+
+    async def reconfigure(self, url: str, api_key: str):
+        """Übernimmt eine geänderte URL/API-Key aus dem Admin-Bereich live."""
+        await self.close()
+        self.url = url.rstrip('/')
+        self.api_key = api_key
+        self.headers = {
+            "X-Emby-Token": self.api_key,
+            "Accept": "application/json"
+        }
+        await self.start()
+        logger.info(f"Jellyfin-Client neu verbunden mit {self.url}")
 
     async def _get(self, endpoint: str, params: Dict = None) -> Dict:
         """Internal GET helper with error handling"""

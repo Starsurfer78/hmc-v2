@@ -47,6 +47,15 @@ header {
     right: 0;
     z-index: 100;
     border-bottom: 1px solid #333;
+    overflow: hidden;
+}
+
+#page-title {
+    flex: 1 1 auto;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .nav-group {
@@ -358,7 +367,10 @@ footer {
     border: none;
     color: rgba(255,255,255,0.8);
     cursor: pointer;
-    padding: 0;
+    padding: 8px;
+    min-width: 44px;
+    min-height: 44px;
+    box-sizing: border-box;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -409,7 +421,10 @@ footer {
     border: none;
     color: rgba(255,255,255,0.7);
     cursor: pointer;
-    padding: 4px;
+    padding: 10px;
+    min-width: 44px;
+    min-height: 44px;
+    box-sizing: border-box;
     border-radius: 50%;
     display: flex;
     align-items: center;
@@ -533,6 +548,17 @@ footer {
     max-width: 600px;
     margin: 2rem auto;
 }
+
+.empty-state {
+    grid-column: 1 / -1;
+    text-align: center;
+    padding: 3rem 2rem;
+    margin: 2rem auto;
+    max-width: 500px;
+    color: var(--text-muted);
+}
+.empty-state .empty-icon { font-size: 3.5rem; margin-bottom: 1rem; display: block; }
+.empty-state .empty-text { font-size: 1.2rem; line-height: 1.5; }
 
 ::-webkit-scrollbar { width: 8px; }
 ::-webkit-scrollbar-track { background: var(--bg-main); }
@@ -903,6 +929,54 @@ footer {
     margin-top: 0.75rem; transition: all 0.2s; font-family: inherit;
 }
 .admin-close-btn:hover { background: rgba(255,255,255,0.1); color: white; }
+
+
+/* ==========================================
+   📚 BIBLIOTHEKS-AUSWAHL
+   ========================================== */
+
+#lib-list { max-height: 45vh; overflow-y: auto; margin-bottom: 1rem; }
+#lib-list::-webkit-scrollbar { width: 6px; }
+#lib-list::-webkit-scrollbar-track { background: transparent; }
+#lib-list::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 3px; }
+
+.lib-loading {
+    display: flex; align-items: center; justify-content: center; gap: 0.75rem;
+    color: rgba(255,255,255,0.45); font-size: 0.9rem; padding: 1.5rem 0;
+}
+.lib-spinner {
+    width: 20px; height: 20px; border-radius: 50%;
+    border: 3px solid rgba(255,255,255,0.15); border-top-color: var(--accent-color);
+    animation: lib-spin 0.7s linear infinite;
+}
+@keyframes lib-spin { to { transform: rotate(360deg); } }
+
+.lib-item {
+    display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+    background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 14px; padding: 0.9rem 1rem; margin-bottom: 0.6rem;
+    cursor: pointer; transition: all 0.2s;
+}
+.lib-item.lib-item-active { background: rgba(245,197,24,0.1); border-color: rgba(245,197,24,0.3); }
+
+.lib-item-info { display: flex; flex-direction: column; gap: 0.2rem; min-width: 0; }
+.lib-item-name { font-size: 1rem; font-weight: 600; color: white; }
+.lib-item-type { font-size: 0.8rem; color: rgba(255,255,255,0.45); }
+
+.lib-toggle-wrap { position: relative; flex-shrink: 0; }
+.lib-checkbox {
+    position: absolute; opacity: 0; width: 52px; height: 30px; margin: 0; cursor: pointer;
+}
+.lib-toggle-track {
+    display: block; width: 52px; height: 30px; border-radius: 999px;
+    background: rgba(255,255,255,0.15); transition: background 0.2s; position: relative;
+}
+.lib-toggle-thumb {
+    position: absolute; top: 3px; left: 3px; width: 24px; height: 24px;
+    border-radius: 50%; background: white; transition: transform 0.2s;
+}
+.lib-checkbox:checked + .lib-toggle-track { background: var(--accent-color); }
+.lib-checkbox:checked + .lib-toggle-track .lib-toggle-thumb { transform: translateX(22px); }
 
 
 /* ==========================================
