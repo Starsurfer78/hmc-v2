@@ -103,6 +103,25 @@ Nach dem Reboot startet HMC automatisch im Kiosk-Modus.
 
 ---
 
+## 🔄 Update (bestehende Installation)
+
+**Über das Admin-Panel (empfohlen):** Schild-Symbol → PIN → Tab **„Update"**. Zeigt an, ob neue Commits auf GitHub verfügbar sind, und aktualisiert per Knopfdruck (`git pull` → Python-Pakete aktualisieren → Dienst neu starten) mit Live-Log direkt in der UI. Setzt voraus, dass die sudo-Berechtigung aus Schritt 4 der Installation eingerichtet ist — sonst schlägt nur der Neustart-Schritt fehl und muss manuell nachgeholt werden (`sudo systemctl restart hmc`).
+
+**Manuell per SSH** (z.B. wenn das Admin-Panel selbst nicht mehr erreichbar ist):
+```bash
+cd /home/pi/hmc
+git pull --rebase
+source venv/bin/activate
+pip install -r backend/requirements.txt
+sudo systemctl restart hmc
+```
+
+`backend/.env` und `backend/admin_settings.json` sind lokale, nicht versionierte Dateien — ein Update überschreibt weder Jellyfin-Zugangsdaten noch Bibliotheken-Freigabe, Lautstärke-Limit oder Admin-PIN.
+
+Falls `git pull --rebase` wegen lokaler Änderungen abbricht: `git status` prüfen und die betroffene Datei sichern/verwerfen (bei einer unveränderten Installation sollte das nicht vorkommen).
+
+---
+
 ## ⚙️ Konfiguration
 
 Alle Einstellungen liegen in `backend/.env` (Vorlage: `.env.example`):
