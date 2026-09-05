@@ -1,12 +1,16 @@
 """
-HMC MQTT Discovery Client
-=========================
-Registriert den HMC-Player automatisch in Home Assistant via MQTT Discovery.
+HMC MQTT State/Command Client
+==============================
+Veröffentlicht den Player-State und nimmt Kommandos entgegen. Die eigentliche
+Home-Assistant-Entität wird durch die Custom Component `hmc_media_player`
+bereitgestellt (siehe custom_components/hmc_media_player/) — HAs native
+MQTT-Integration kennt kein `media_player`-Discovery-Schema, ein Publish auf
+`homeassistant/media_player/.../config` wird von HA schlicht ignoriert.
 
 Topics die genutzt werden:
-  Discovery:   homeassistant/media_player/{device_id}/config   (retained)
-  State:       hmc/{device_id}/state                            (retained)
-  Command:     hmc/{device_id}/command                          (subscribed)
+  State:        hmc/{device_id}/state          (retained)
+  Command:      hmc/{device_id}/command        (subscribed)
+  Availability: hmc/{device_id}/availability   (retained, LWT)
 
 Jede HMC-Instanz bekommt eine eindeutige device_id aus MQTT_DEVICE_ID (.env).
 Damit können mehrere Player im selben Netz koexistieren.
@@ -15,7 +19,6 @@ Damit können mehrere Player im selben Netz koexistieren.
 import asyncio
 import json
 import logging
-import socket
 from typing import Optional, Callable
 
 import aiomqtt
@@ -35,7 +38,6 @@ class MqttClient:
         self.password: Optional[str] = settings.MQTT_PASSWORD or None
 
         # Topics
-        self.discovery_topic = f"homeassistant/media_player/{self.device_id}/config"
         self.state_topic      = f"hmc/{self.device_id}/state"
         self.command_topic    = f"hmc/{self.device_id}/command"
         self.availability_topic = f"hmc/{self.device_id}/availability"
@@ -48,6 +50,10 @@ class MqttClient:
         self._connected = asyncio.Event()
         self._shutdown = asyncio.Event()
 
+    @property
+    def is_connected(self) -> bool:
+        return self._connected.is_set()
+
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
@@ -56,7 +62,7 @@ class MqttClient:
         """Verbindet zum Broker und startet den Listener-Task."""
         self._shutdown.clear()
         self._task = asyncio.create_task(self._run())
-        # Kurz warten bis Discovery veröffentlicht wurde
+        # Kurz warten bis die Verbindung zum Broker steht
         try:
             await asyncio.wait_for(self._connected.wait(), timeout=10)
         except asyncio.TimeoutError:
@@ -86,7 +92,7 @@ class MqttClient:
         try:
             track = state.get("current_track") or {}
             payload = {
-                "state":        _ha_state(state.get("state", "idle")),
+                "state":        state.get("state", "idle"),
                 "title":        track.get("name", ""),
                 "artist":       "",          # Jellyfin liefert keinen Artist auf Track-Ebene
                 "album":        "",
@@ -129,12 +135,6 @@ class MqttClient:
                 async with aiomqtt.Client(**kwargs) as client:
                     self._client = client
 
-                    # Discovery + Availability publizieren
-                    await client.publish(
-                        self.discovery_topic,
-                        json.dumps(self._discovery_payload()),
-                        retain=True,
-                    )
                     await client.publish(
                         self.availability_topic, "online", retain=True
                     )
@@ -169,83 +169,10 @@ class MqttClient:
                 logger.error(f"MQTT unerwarteter Fehler: {e}")
                 await asyncio.sleep(5)
 
-    # ------------------------------------------------------------------
-    # Discovery Payload
-    # ------------------------------------------------------------------
-
-    def _discovery_payload(self) -> dict:
-        """
-        Erzeugt den HA MQTT Discovery Payload für einen media_player.
-        Dokumentation: https://www.home-assistant.io/integrations/media_player.mqtt/
-        """
-        return {
-            # Eindeutige Identität
-            "unique_id": self.device_id,
-            "name":      self.device_name,
-
-            # Topics
-            "state_topic":        self.state_topic,
-            "command_topic":      self.command_topic,
-            "availability_topic": self.availability_topic,
-
-            # State-Mapping: HMC-Werte → HA-Werte
-            "state_playing":  "playing",
-            "state_paused":   "paused",
-            "state_stopped":  "stopped",
-            "state_idle":     "idle",
-
-            # Welche Felder aus dem JSON-State gelesen werden
-            "value_template":         "{{ value_json.state }}",
-            "volume_template":        "{{ value_json.volume_level }}",
-            "media_title_template":   "{{ value_json.title }}",
-            "media_duration_template":"{{ value_json.duration }}",
-            "media_position_template":"{{ value_json.position }}",
-            "media_image_url_template":"{{ value_json.media_image_url }}",
-
-            # Unterstützte Features in HA
-            "supported_features": [
-                "pause", "stop",
-                "next_track", "previous_track",
-                "volume_set",
-            ],
-
-            # Kommandos die HA sendet → werden in on_command verarbeitet
-            "payload_play":           "play",
-            "payload_pause":          "pause",
-            "payload_stop":           "stop",
-            "payload_media_play_pause": "play_pause",
-
-            # Gerät-Gruppierung in HA (alle HMC-Instanzen unter einem Gerät)
-            "device": {
-                "identifiers":    [self.device_id],
-                "name":           self.device_name,
-                "model":          "HMC v2.1",
-                "manufacturer":   "DIY",
-                "sw_version":     "2.1.0",
-            },
-
-            # Availability
-            "payload_available":     "online",
-            "payload_not_available": "offline",
-        }
-
 
 # ------------------------------------------------------------------
 # Hilfsfunktionen
 # ------------------------------------------------------------------
-
-def _ha_state(hmc_state: str) -> str:
-    """Übersetzt HMC PlaybackState in HA media_player state."""
-    mapping = {
-        "playing":  "playing",
-        "paused":   "paused",
-        "stopped":  "stopped",
-        "idle":     "idle",
-        "loading":  "idle",
-        "error":    "idle",
-    }
-    return mapping.get(hmc_state, "idle")
-
 
 async def _safe_call(fn: Callable, *args):
     """Führt einen Callback aus und fängt Exceptions ab."""

@@ -1,0 +1,20 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "HMC Media Player hinzufügen",
+        "description": "Träg die MQTT_DEVICE_ID aus der backend/.env deines HMC-Geräts ein.",
+        "data": {
+          "device_id": "Geräte-ID (MQTT_DEVICE_ID)",
+          "name": "Anzeigename"
+        }
+      }
+    },
+    "error": {
+      "invalid_device_id": "Ungültige Geräte-ID – nur Kleinbuchstaben, Ziffern und Unterstrich erlaubt."
+    },
+    "abort": {
+      "already_configured": "Dieses Gerät ist bereits eingerichtet."
+    }
+  }
+}

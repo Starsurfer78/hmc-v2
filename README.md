@@ -8,7 +8,7 @@ Das System ist explizit als **Audio-Endgerät** für Kinder (ca. 4–10 Jahre) k
 - ✅ **Keine Abo-Kosten** (eigene MP3/M4B-Sammlung via Jellyfin)
 - ✅ **Kindgerechte Bedienung** (Touch-Only, keine Texteingabe, keine Menüs)
 - ✅ **Eltern-freundlich** (wartungsarm, "Reboot tut gut"-Prinzip)
-- ✅ **Multi-Player** (mehrere Geräte im Netz, jedes erscheint automatisch in Home Assistant)
+- ✅ **Multi-Player** (mehrere Geräte im Netz, jedes über eine eigene MQTT_DEVICE_ID)
 
 ---
 
@@ -21,7 +21,8 @@ Jellyfin Server  ──▶  Backend (FastAPI)  ──▶  MPV (Audio)
                             │
                    MQTT Broker (Mosquitto)
                             │
-                    Home Assistant (Auto-Discovery)
+              Home Assistant Custom Component
+                    (custom_components/hmc_media_player)
 ```
 
 | Schicht | Technologie | Aufgabe |
@@ -30,8 +31,8 @@ Jellyfin Server  ──▶  Backend (FastAPI)  ──▶  MPV (Audio)
 | Backend | FastAPI + Python 3.11+ | Logik, Policy, Player-Steuerung |
 | Player | MPV (Headless, IPC) | Audio-Engine |
 | Medien | Jellyfin | Bibliothek + Metadaten |
-| MQTT | aiomqtt + Mosquitto | State-Push, HA-Kommandos |
-| Smart Home | Home Assistant | Auto-Discovery, Automationen |
+| MQTT | aiomqtt + Mosquitto | State-Push, Kommando-Empfang |
+| Smart Home | Home Assistant + Custom Component | `media_player`-Entität, Automationen |
 
 ---
 
@@ -76,7 +77,7 @@ Am Ende der Installation startet der interaktive Setup-Assistent:
 - Verbindungstest zu Jellyfin
 - Auswahl der erlaubten Bibliotheken
 - Audio-Device-Auswahl
-- MQTT-Konfiguration (Broker-IP, Device-ID)
+- MQTT-Konfiguration mit Verbindungstest (Broker, Port, Login, Device-ID) — kann übersprungen werden, dann startet HMC ohne Home-Assistant-Anbindung
 
 Später erneut aufrufen:
 ```bash
@@ -117,7 +118,7 @@ ALLOWED_LIBRARIES=abc123,def456
 # Audio (ALSA-Device — hw:1,0 = Behringer UCA222)
 AUDIO_DEVICE=hw:1,0
 
-# MQTT Discovery
+# MQTT (leer lassen = Home-Assistant-Anbindung deaktiviert)
 MQTT_BROKER=192.168.178.XX
 MQTT_PORT=1883
 MQTT_USER=
@@ -169,6 +170,7 @@ Der kleine Schild-Button (🛡) rechts im Header öffnet das PIN-geschützte Adm
 | Tab | Inhalt |
 |---|---|
 | Allgemein | Gerätename, Max-Lautstärke, Jellyfin-URL, Audio-Device |
+| Bibliotheken | Jellyfin-Bibliotheken per Checkbox freigeben (live von Jellyfin geladen) |
 | Sicherheit | Admin-PIN ändern |
 | Update | Git-Status, OTA-Update mit Live-Log |
 
@@ -178,27 +180,28 @@ Das Admin-Panel schreibt Änderungen in `backend/admin_settings.json`.
 
 ## 🏠 Home Assistant Integration
 
-HMC registriert sich beim Start automatisch per **MQTT Discovery** in Home Assistant — keine manuelle Konfiguration nötig.
+HMC veröffentlicht seinen State laufend per MQTT (`hmc/{device_id}/state`,
+`hmc/{device_id}/command`, `hmc/{device_id}/availability`) — das allein reicht
+aber nicht für eine `media_player`-Entität: Home Assistants native
+MQTT-Integration hat kein Discovery-Schema für die `media_player`-Domäne
+(anders als z.B. für `sensor` oder `switch`).
 
-Jedes Gerät erscheint als `media_player.{MQTT_DEVICE_ID}` in HA.
+Für eine echte `media_player`-Karte in HA die mitgelieferte Custom Component
+installieren: **[custom_components/hmc_media_player](custom_components/hmc_media_player/README.md)**.
+Kurzfassung:
+1. Ordner `custom_components/hmc_media_player/` in die HA-Config kopieren (oder als HACS-Custom-Repository hinzufügen) und HA neu starten
+2. **Einstellungen → Geräte & Dienste → Integration hinzufügen → „HMC Media Player"**
+3. Die `MQTT_DEVICE_ID` aus `backend/.env` eintragen
 
-**Was HA steuern kann:**
-- Pause / Resume / Stop
+**Was HA danach steuern kann:**
+- Play / Pause / Stop
 - Nächster / Vorheriger Track
-- Lautstärke (wird auf Max-Lautstärke geclampt)
-- Status, Track-Titel, Cover, Position abrufen
+- Lautstärke (wird auf Max-Lautstärke geclampt), Seek
+- Status, Track-Titel, Cover, Position werden live angezeigt
 
-**Bereits angelegte Automationen:**
-- `automation.hmc_pause_bei_tts` — pausiert HMC für TTS-Durchsagen, setzt danach fort
-- `automation.hmc_nachtmodus_stop` — stoppt HMC täglich um 20:00 Uhr
-
-TTS-Durchsage aus einer Automation auslösen:
-```yaml
-service: event.fire
-event_type: hmc_tts_start
-event_data:
-  message: "Das Abendessen ist fertig!"
-```
+Automationen (z.B. "bei TTS pausieren" oder "abends stoppen") lassen sich
+anschließend ganz normal gegen die entstandene `media_player.<name>`-Entität
+bauen.
 
 ---
 
@@ -221,7 +224,7 @@ uvicorn backend.main:app --reload
 
 | Methode | Pfad | Beschreibung |
 |---|---|---|
-| GET | `/health` | System-Status |
+| GET | `/health` | System-Status (inkl. MQTT-Verbindungsstatus) |
 | GET | `/libraries` | Erlaubte Bibliotheken |
 | GET | `/library/{id}/artists` | Künstler einer Bibliothek |
 | GET | `/artist/{id}/albums` | Alben eines Künstlers |
@@ -238,6 +241,7 @@ uvicorn backend.main:app --reload
 | POST | `/admin/verify-pin` | PIN prüfen → Token |
 | GET | `/admin/settings` | Einstellungen lesen |
 | POST | `/admin/settings` | Einstellungen speichern |
+| GET | `/admin/jellyfin/libraries` | Jellyfin-Bibliotheken mit Aktivierungsstatus (für Bibliotheken-Tab) |
 | GET | `/admin/ota/status` | Git-Status |
 | POST | `/admin/ota/update` | OTA-Update (SSE-Stream) |
 
@@ -253,14 +257,14 @@ sudo journalctl -u hmc -f
 cd /home/pi/hmc && source venv/bin/activate
 uvicorn backend.main:app --host 0.0.0.0 --port 8000
 
-# MQTT Discovery prüfen
-mosquitto_sub -h 192.168.178.XX -t "homeassistant/media_player/hmc_kinderzimmer/config" -C 1
-
 # MQTT State live verfolgen
 mosquitto_sub -h 192.168.178.XX -t "hmc/hmc_kinderzimmer/state"
 
-# Kommando manuell senden
+# Kommando manuell senden (pause/resume/stop/next/previous/volume:<0-100>/seek:<sek>)
 mosquitto_pub -h 192.168.178.XX -t "hmc/hmc_kinderzimmer/command" -m "pause"
+
+# MQTT-Verbindungsstatus prüfen (unabhängig vom Broker-Log)
+curl -s http://localhost:8000/health
 
 # Bildschirm manuell steuern
 curl -X POST http://localhost:8000/screen/off

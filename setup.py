@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 import os
+import re
 import sys
 import asyncio
 import aiohttp
+import aiomqtt
 
 # Define colors for output
 GREEN = "\033[92m"
@@ -57,6 +59,20 @@ async def check_jellyfin(url, api_key):
         return False, "Verbindungsfehler (Server nicht erreichbar)"
     except Exception as e:
         return False, f"Fehler: {e}"
+
+async def check_mqtt(broker, port, user, password):
+    """Kurzer Verbindungstest gegen den MQTT-Broker (connect + disconnect)."""
+    try:
+        kwargs = {"hostname": broker, "port": port}
+        if user:
+            kwargs["username"] = user
+        if password:
+            kwargs["password"] = password
+        async with aiomqtt.Client(**kwargs):
+            pass
+        return True, None
+    except Exception as e:
+        return False, str(e)
 
 async def main():
     print(f"{GREEN}HMC v2.1 Setup Assistant{RESET}")
@@ -134,9 +150,43 @@ async def main():
     hmc_user = ask("Benutzername für dieses Gerät", "kind")
     audio_device = ask("Audio Device (ALSA)", "hw:1,0")
 
-    # 4. Write .env
+    # 4. MQTT / Home Assistant
+    print_step("MQTT / Home Assistant")
+    print("   Wird benötigt, damit HMC seinen Status an Home Assistant meldet.")
+    print("   (Broker noch nicht bereit? Einfach leer lassen und später in backend/.env nachtragen.)")
+
+    mqtt_broker = ask("MQTT Broker (IP/Hostname)", "")
+    mqtt_port = 1883
+    mqtt_user = ""
+    mqtt_password = ""
+    mqtt_device_id = "hmc_player"
+    mqtt_device_name = "HMC Player"
+
+    if mqtt_broker:
+        mqtt_port = int(ask("MQTT Port", "1883"))
+        mqtt_user = ask("MQTT Benutzername (leer wenn kein Login nötig)", "")
+        mqtt_password = ask("MQTT Passwort", "") if mqtt_user else ""
+
+        while True:
+            mqtt_device_id = ask("Eindeutige Geräte-ID (nur a-z, 0-9, _)", "hmc_kinderzimmer")
+            if re.fullmatch(r"[a-z0-9_]+", mqtt_device_id):
+                break
+            print_warn("Ungültige Geräte-ID – nur Kleinbuchstaben, Ziffern und Unterstrich erlaubt.")
+        mqtt_device_name = ask("Anzeigename in Home Assistant", "HMC Kinderzimmer")
+
+        print("   Teste MQTT-Verbindung...")
+        success, error = await check_mqtt(mqtt_broker, mqtt_port, mqtt_user, mqtt_password)
+        if success:
+            print(f"   {GREEN}Verbindung erfolgreich!{RESET}")
+        else:
+            print_err(f"MQTT-Verbindung fehlgeschlagen: {error}")
+            print_warn("HMC startet trotzdem – die Werte können später in backend/.env korrigiert werden.")
+    else:
+        print_warn("Kein Broker angegeben – HMC startet ohne Home-Assistant-Anbindung.")
+
+    # 5. Write .env
     print_step("Speichere Konfiguration...")
-    
+
     env_content = f"""# Jellyfin
 JELLYFIN_URL={jf_url}
 JELLYFIN_API_KEY={jf_key}
@@ -149,6 +199,14 @@ ALLOWED_LIBRARIES={",".join(allowed_ids)}
 
 # Audio
 AUDIO_DEVICE={audio_device}
+
+# MQTT Discovery
+MQTT_BROKER={mqtt_broker}
+MQTT_PORT={mqtt_port}
+MQTT_USER={mqtt_user}
+MQTT_PASSWORD={mqtt_password}
+MQTT_DEVICE_ID={mqtt_device_id}
+MQTT_DEVICE_NAME={mqtt_device_name}
 """
     
     try:

@@ -21,61 +21,35 @@ const btnBack    = document.getElementById('btn-back');
 // ==========================================
 // 💡 BILDSCHIRMSCHONER
 // ==========================================
-// Wie es funktioniert:
-//   – Nach SCREEN_TIMEOUT ms ohne Touch UND ohne laufende Wiedergabe:
-//     Frontend ruft POST /screen/off → Backend führt xset dpms force off aus
-//   – Bei erstem Touch auf den schwarzen Bildschirm:
-//     Frontend ruft POST /screen/on → Bildschirm leuchtet sofort wieder
-//   – Wenn Wiedergabe startet (updatePlayerState erkennt state=playing):
-//     Bildschirm wird automatisch eingeschaltet und Timer resettet
-// ==========================================
 
-const SCREEN_TIMEOUT_MS = 5 * 60 * 1000;  // 5 Minuten – im Admin-Panel einstellbar (TODO)
-let _screenTimer   = null;
-let _screenIsOff   = false;
-let _isPlaying     = false;
+const SCREEN_TIMEOUT_MS = 5 * 60 * 1000;
+let _screenTimer = null;
+let _screenIsOff = false;
+let _isPlaying   = false;
 
 function _resetScreenTimer() {
     clearTimeout(_screenTimer);
-    if (_screenIsOff) {
-        // Beim ersten Touch Bildschirm einschalten
-        _screenWakeUp();
-        return;
-    }
-    // Nur Timer starten wenn nichts abgespielt wird
-    if (!_isPlaying) {
-        _screenTimer = setTimeout(_screenSleep, SCREEN_TIMEOUT_MS);
-    }
+    if (_screenIsOff) { _screenWakeUp(); return; }
+    if (!_isPlaying) _screenTimer = setTimeout(_screenSleep, SCREEN_TIMEOUT_MS);
 }
 
 async function _screenSleep() {
     if (_isPlaying || _screenIsOff) return;
     _screenIsOff = true;
-    try {
-        await fetch(`${API_BASE}/screen/off`, { method: 'POST' });
-    } catch (e) {
-        // Kein Fehler – auf Windows läuft das einfach ins Leere
-    }
+    try { await fetch(`${API_BASE}/screen/off`, { method: 'POST' }); } catch (e) {}
 }
 
 async function _screenWakeUp() {
     if (!_screenIsOff) return;
     _screenIsOff = false;
-    try {
-        await fetch(`${API_BASE}/screen/on`, { method: 'POST' });
-    } catch (e) {}
-    // Timer für nächstes Abschalten neu starten
-    if (!_isPlaying) {
-        _screenTimer = setTimeout(_screenSleep, SCREEN_TIMEOUT_MS);
-    }
+    try { await fetch(`${API_BASE}/screen/on`, { method: 'POST' }); } catch (e) {}
+    if (!_isPlaying) _screenTimer = setTimeout(_screenSleep, SCREEN_TIMEOUT_MS);
 }
 
 function _setupScreenWatcher() {
-    // Jede Touch-/Maus-Interaktion setzt den Timer zurück
     ['touchstart', 'touchend', 'mousedown', 'mousemove', 'keydown'].forEach(evt => {
         document.addEventListener(evt, _resetScreenTimer, { passive: true });
     });
-    // Initial-Timer starten
     _resetScreenTimer();
 }
 
@@ -167,8 +141,7 @@ function setupQueueUI() {
                 <div class="queue-current"></div>
                 <div class="queue-list"></div>
             </div>
-        </div>
-    `;
+        </div>`;
     document.body.appendChild(queueOverlay);
     document.getElementById('queue-close').onclick = closeQueue;
     queueOverlay.onclick = (e) => { if (e.target === queueOverlay) closeQueue(); };
@@ -176,14 +149,12 @@ function setupQueueUI() {
 
 function createQueueButton() {
     const btn = document.createElement('button');
-    btn.id = 'btn-queue';
-    btn.title = 'Wiedergabeliste';
+    btn.id = 'btn-queue'; btn.title = 'Wiedergabeliste';
     btn.innerHTML = `
         <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
             <path d="M15 6H3v2h12V6zm0 4H3v2h12v-2zM3 16h8v-2H3v2zM17 6v8.18c-.31-.11-.65-.18-1-.18-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3V8h3V6h-5z"/>
         </svg>
-        <span class="queue-count" id="queue-count" style="display:none">0</span>
-    `;
+        <span class="queue-count" id="queue-count" style="display:none">0</span>`;
     btn.onclick = openQueue;
     return btn;
 }
@@ -521,14 +492,11 @@ async function updatePlayerState() {
         const state = await fetch(`${API_BASE}/player/state`).then(r => r.json());
         if (overlay) overlay.style.display = 'none';
 
-        // Bildschirm-Logik: Bei Wiedergabe immer einschalten + Timer stoppen
         const nowPlaying = state.state === 'playing';
         if (nowPlaying && !_isPlaying) {
-            // Wiedergabe gerade gestartet → Bildschirm ein, Timer stoppen
             clearTimeout(_screenTimer);
             if (_screenIsOff) _screenWakeUp();
         } else if (!nowPlaying && _isPlaying) {
-            // Wiedergabe gerade gestoppt/pausiert → Timer starten
             _resetScreenTimer();
         }
         _isPlaying = nowPlaying;
@@ -659,11 +627,11 @@ async function _openSettings() {
 async function _loadSettings() {
     try {
         const data = await fetch(`${API_BASE}/admin/settings?token=${_adminToken}`).then(r => r.json());
-        document.getElementById('set-device-name').value      = data.device_name   || '';
-        document.getElementById('set-jellyfin-url').value     = data.jellyfin_url  || '';
-        document.getElementById('set-audio-device').value     = data.audio_device  || '';
-        document.getElementById('set-max-volume').value       = data.max_volume    ?? 60;
-        document.getElementById('set-max-volume-val').innerText = data.max_volume  ?? 60;
+        document.getElementById('set-device-name').value        = data.device_name  || '';
+        document.getElementById('set-jellyfin-url').value       = data.jellyfin_url || '';
+        document.getElementById('set-audio-device').value       = data.audio_device || '';
+        document.getElementById('set-max-volume').value         = data.max_volume   ?? 60;
+        document.getElementById('set-max-volume-val').innerText = data.max_volume   ?? 60;
         document.getElementById('set-max-volume').oninput = (e) => {
             document.getElementById('set-max-volume-val').innerText = e.target.value;
         };
@@ -692,8 +660,8 @@ async function saveNewPin() {
     const confirmPin = document.getElementById('set-confirm-pin').value.trim();
     const msg        = document.getElementById('pin-change-msg');
     msg.style.display = 'block';
-    if (newPin.length < 4)       { msg.style.color = '#ff6b6b'; msg.innerText = 'PIN muss mind. 4 Ziffern haben'; return; }
-    if (newPin !== confirmPin)   { msg.style.color = '#ff6b6b'; msg.innerText = 'PINs stimmen nicht überein';     return; }
+    if (newPin.length < 4)     { msg.style.color = '#ff6b6b'; msg.innerText = 'PIN muss mind. 4 Ziffern haben'; return; }
+    if (newPin !== confirmPin) { msg.style.color = '#ff6b6b'; msg.innerText = 'PINs stimmen nicht überein';     return; }
     try {
         const res = await fetch(`${API_BASE}/admin/settings`, {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -706,12 +674,122 @@ async function saveNewPin() {
     } catch { msg.style.color = '#ff6b6b'; msg.innerText = '❌ Fehler beim Ändern'; }
 }
 
+
+// ==========================================
+// 🔐 ADMIN — Tab-Steuerung (4 Tabs)
+// ==========================================
+
+const _TAB_NAMES = ['general', 'libraries', 'security', 'ota'];
+
 function switchTab(name) {
-    const names = ['general', 'security', 'ota'];
-    document.querySelectorAll('.admin-tab').forEach((t, i) => t.classList.toggle('active', names[i] === name));
-    names.forEach(t => { document.getElementById(`tab-${t}`).style.display = t === name ? 'block' : 'none'; });
-    if (name === 'ota') _loadOtaStatus();
+    document.querySelectorAll('.admin-tab').forEach((t, i) => {
+        t.classList.toggle('active', _TAB_NAMES[i] === name);
+    });
+    _TAB_NAMES.forEach(t => {
+        document.getElementById(`tab-${t}`).style.display = t === name ? 'block' : 'none';
+    });
+    if (name === 'libraries') _loadJellyfinLibraries();
+    if (name === 'ota')       _loadOtaStatus();
 }
+
+
+// ==========================================
+// 📚 BIBLIOTHEKS-AUSWAHL
+// ==========================================
+
+async function _loadJellyfinLibraries() {
+    const list = document.getElementById('lib-list');
+    const btn  = document.getElementById('btn-save-libraries');
+    const msg  = document.getElementById('lib-save-msg');
+
+    list.innerHTML = `
+        <div class="lib-loading">
+            <div class="lib-spinner"></div>
+            Lade Bibliotheken von Jellyfin...
+        </div>`;
+    btn.style.display = 'none';
+    msg.style.display = 'none';
+
+    try {
+        const libs = await fetch(`${API_BASE}/admin/jellyfin/libraries?token=${_adminToken}`)
+            .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); });
+
+        if (!libs.length) {
+            list.innerHTML = '<p class="admin-hint">Keine Bibliotheken in Jellyfin gefunden.</p>';
+            return;
+        }
+
+        // Typ-Labels für bessere Übersicht
+        const typeLabel = {
+            music:    '🎵 Musik',
+            books:    '📚 Hörbücher',
+            audiobooks: '📚 Hörbücher',
+            movies:   '🎬 Filme',
+            tvshows:  '📺 Serien',
+            photos:   '🖼 Fotos',
+            unknown:  '📁 Sonstiges',
+        };
+
+        list.innerHTML = libs.map(lib => `
+            <label class="lib-item ${lib.enabled ? 'lib-item-active' : ''}" id="lib-label-${lib.id}">
+                <div class="lib-item-info">
+                    <span class="lib-item-name">${lib.name}</span>
+                    <span class="lib-item-type">${typeLabel[lib.type] || '📁 ' + lib.type}</span>
+                </div>
+                <div class="lib-toggle-wrap">
+                    <input type="checkbox" class="lib-checkbox" id="lib-${lib.id}"
+                        data-id="${lib.id}" ${lib.enabled ? 'checked' : ''}
+                        onchange="onLibToggle(this)">
+                    <span class="lib-toggle-track">
+                        <span class="lib-toggle-thumb"></span>
+                    </span>
+                </div>
+            </label>
+        `).join('');
+
+        btn.style.display = 'block';
+
+    } catch (e) {
+        list.innerHTML = `<p class="ota-error">⚠️ Fehler: ${e.message}<br><small>Ist Jellyfin erreichbar und die URL konfiguriert?</small></p>`;
+    }
+}
+
+function onLibToggle(checkbox) {
+    // Label-Klasse live aktualisieren für visuelles Feedback
+    const label = document.getElementById(`lib-label-${checkbox.dataset.id}`);
+    if (label) label.classList.toggle('lib-item-active', checkbox.checked);
+}
+
+async function saveLibraries() {
+    const checkboxes = document.querySelectorAll('.lib-checkbox');
+    const selected   = Array.from(checkboxes)
+        .filter(cb => cb.checked)
+        .map(cb => cb.dataset.id);
+
+    const msg = document.getElementById('lib-save-msg');
+    msg.style.display = 'none';
+
+    try {
+        const res = await fetch(`${API_BASE}/admin/settings`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ token: _adminToken, allowed_libraries: selected })
+        });
+        if (!res.ok) throw new Error();
+        msg.style.display = 'block';
+        msg.style.color   = '#6bffb3';
+        msg.innerText     = `✅ ${selected.length} Bibliothek(en) gespeichert`;
+        showToast('✅ Bibliotheken gespeichert');
+    } catch {
+        msg.style.display = 'block';
+        msg.style.color   = '#ff6b6b';
+        msg.innerText     = '❌ Fehler beim Speichern';
+    }
+}
+
+
+// ==========================================
+// 🔄 OTA UPDATE
+// ==========================================
 
 async function _loadOtaStatus() {
     const box = document.getElementById('ota-status-box');

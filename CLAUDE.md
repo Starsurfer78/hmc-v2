@@ -73,13 +73,15 @@ E:\TRAE\hmc\
 - MQTT-Felder: `MQTT_BROKER`, `MQTT_PORT`, `MQTT_USER`, `MQTT_PASSWORD`, `MQTT_DEVICE_ID`, `MQTT_DEVICE_NAME`
 - **Windows-Detection in `main.py`:** `AUDIO_DEVICE` wird auf `"mock"` gesetzt
 
-### `backend/mqtt_client.py` – MQTT Discovery Client
+### `backend/mqtt_client.py` – MQTT State/Command Client
 - Bibliothek: `aiomqtt` (async, reconnect-fähig)
-- **Discovery-Topic:** `homeassistant/media_player/{device_id}/config` (retained) → HA liest dieses Topic beim Start und registriert automatisch einen `media_player`-Eintrag
+- **Wichtig:** Home Assistants native MQTT-Integration hat **kein** Discovery-Schema für die `media_player`-Domäne (anders als z.B. `sensor`/`switch`/`climate`) — ein früherer Versuch, über `homeassistant/media_player/{device_id}/config` Auto-Discovery zu machen, wurde deshalb entfernt, da HA dieses Topic nie ausgewertet hat.
 - **State-Topic:** `hmc/{device_id}/state` (retained) → JSON mit `state`, `title`, `volume_level`, `duration`, `position`, `media_image_url`
-- **Command-Topic:** `hmc/{device_id}/command` → HA sendet hier `pause`, `resume`, `stop`, `play_pause`, `next`, `previous`
+- **Command-Topic:** `hmc/{device_id}/command` → nimmt `pause`, `resume`, `stop`, `play_pause`, `next`, `previous`, `volume:<0-100>`, `seek:<sekunden>` entgegen
 - **Availability-Topic:** `hmc/{device_id}/availability` → `online`/`offline`, auch als LWT gesetzt
-- Mehrere Player im Netz: jede Instanz hat eine andere `MQTT_DEVICE_ID` → separate `media_player`-Entitäten in HA
+- Die eigentliche `media_player`-Entität in HA liefert die separate Home-Assistant-Custom-Component **`custom_components/hmc_media_player/`** (im selben Repo), die diese drei Topics konsumiert. Siehe deren README für Installation/Einrichtung.
+- Startet nur, wenn `MQTT_BROKER` in `.env` gesetzt ist (leer = MQTT/HA-Anbindung bewusst deaktiviert, kein Endlos-Reconnect gegen einen Platzhalter)
+- Mehrere Player im Netz: jede Instanz hat eine andere `MQTT_DEVICE_ID` → eigener Eintrag der Custom Component pro Gerät
 - Reconnect-Loop: bei Verbindungsverlust automatischer Neuversuch alle 5 s
 
 ### `backend/main.py` – FastAPI App
@@ -109,32 +111,30 @@ E:\TRAE\hmc\
 
 ---
 
-## MQTT Discovery – Wie es funktioniert
+## HA-Integration – Wie es funktioniert
 
-Beim Start veröffentlicht HMC einmalig ein JSON auf das Discovery-Topic. HA liest dieses Topic und registriert automatisch einen `media_player`-Eintrag ohne jede manuelle Konfiguration.
+HMC selbst betreibt nur das MQTT-Protokoll (State/Command/Availability), erzeugt aber **keine** HA-Entität per Discovery — das kann die native MQTT-Integration für `media_player` nicht (siehe oben). Die Entität entsteht durch die mitgelieferte Home-Assistant-Custom-Component `custom_components/hmc_media_player/`, die diese Topics abonniert und eine echte `MediaPlayerEntity` registriert. Einmalige Installation auf HA-Seite nötig (Custom Component kopieren oder via HACS, dann über die HA-UI eine Integration pro Gerät hinzufügen) — siehe `custom_components/hmc_media_player/README.md`.
 
 **Was HA danach kann:**
-- Player-State sehen (playing / paused / stopped / idle)
+- Player-State sehen (playing / paused / idle / buffering — HA kennt kein "stopped", ein gestoppter/leerer HMC-Player ist für HA `idle`)
 - Track-Titel, Dauer, Position, Cover-Bild anzeigen
-- Pause / Resume / Stop / Next / Previous aus Automationen steuern
+- Play / Pause / Stop / Next / Previous / Seek aus Automationen steuern
 - Lautstärke setzen (0–1.0, wird intern auf Max-Volume geclampt)
 - Availability-Status (online/offline) verfolgen
 
 **Topic-Übersicht pro Instanz:**
 ```
-homeassistant/media_player/{device_id}/config   Discovery (retained, einmalig beim Start)
 hmc/{device_id}/state                            State-JSON (retained, alle 5 s + nach Aktionen)
-hmc/{device_id}/command                          Kommandos von HA (pause/resume/stop/next/previous)
+hmc/{device_id}/command                          Kommandos (pause/resume/stop/next/previous/volume:<n>/seek:<n>)
 hmc/{device_id}/availability                     online / offline (LWT)
 ```
 
-**Mehrere Player einrichten:** Jede `backend/.env` bekommt eine andere `MQTT_DEVICE_ID`:
+**Mehrere Player einrichten:** Jede `backend/.env` bekommt eine andere `MQTT_DEVICE_ID`, und für jedes Gerät wird die Custom Component einmal zusätzlich in HA eingerichtet:
 ```
 # Pi 1 (Kinderzimmer):  MQTT_DEVICE_ID=hmc_kinderzimmer
 # Pi 2 (Wohnzimmer):    MQTT_DEVICE_ID=hmc_wohnzimmer
 # Pi 3 (Küche):         MQTT_DEVICE_ID=hmc_kueche
 ```
-HA zeigt dann `media_player.hmc_kinderzimmer`, `media_player.hmc_wohnzimmer`, etc.
 
 ---
 
@@ -185,7 +185,7 @@ JELLYFIN_API_KEY=YOUR_API_KEY
 ALLOWED_LIBRARIES=abc123,def456    # Jellyfin Library-IDs
 AUDIO_DEVICE=hw:1,0               # ALSA-Device (hw:1,0 = Behringer UCA222)
 
-# MQTT Discovery
+# MQTT (leer lassen = Home-Assistant-Anbindung deaktiviert)
 MQTT_BROKER=192.168.178.XX        # IP des Mosquitto-Brokers
 MQTT_PORT=1883
 MQTT_USER=                        # leer wenn kein Login nötig
@@ -252,8 +252,8 @@ sudo systemctl status hmc
   - `T5.3`: Aktuelles Album/Track-Anzeige (TODO – nur State-Text)
   - `T5.4`: "Keine Inhalte"-Fehlermeldung fehlt
 
-- **EPIC 6 – HA Integration:** ✅ ERLEDIGT (MQTT Discovery)
-  - Automationen in HA angelegt: `automation.hmc_pause_bei_tts`, `automation.hmc_nachtmodus_stop`
+- **EPIC 6 – HA Integration:** ✅ Grundlage vorhanden (`custom_components/hmc_media_player`), MQTT-Discovery-Ansatz verworfen (HA unterstützt kein `media_player`-Discovery)
+  - Automationen (Pause bei TTS, Nachtmodus-Stop) noch nicht eingerichtet — TODO in `tasks/todo.md`
 
 - **EPIC 7 – Stabilität:** Reboot-Tests, Log-Struktur prüfen
 
@@ -264,9 +264,6 @@ sudo systemctl status hmc
 ```bash
 # Service-Logs
 sudo journalctl -u hmc -f
-
-# MQTT Discovery prüfen (zeigt was HMC veröffentlicht hat)
-mosquitto_sub -h 192.168.178.XX -t "homeassistant/media_player/hmc_kinderzimmer/config" -C 1
 
 # MQTT State live verfolgen
 mosquitto_sub -h 192.168.178.XX -t "hmc/hmc_kinderzimmer/state"

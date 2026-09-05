@@ -3,34 +3,34 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>HMC v2.1</title>
-    <link rel="stylesheet" href="/static/styles.css?v=2.6">
+    <title>Plex HMC Player</title>
+    <link rel="stylesheet" href="/static/styles.css?v=0.3">
 </head>
 <body>
     <div id="app">
-        <div id="connection-overlay" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 9999; flex-direction: column; align-items: center; justify-content: center; color: white;">
-            <div style="font-size: 2rem; margin-bottom: 1rem;">🔌</div>
+        <div id="connection-overlay" class="connection-overlay" style="display:none">
+            <div class="connection-icon">🔌</div>
             <h2>Verbindung getrennt</h2>
             <p>Versuche neu zu verbinden...</p>
         </div>
         <header>
             <div class="nav-group">
-                <button id="btn-back" style="display: none;" title="Zurück">
+                <button id="btn-back" style="display:none" title="Zurueck">
                     <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></svg>
                 </button>
-                <button id="btn-home" style="display: none;" title="Startseite">
+                <button id="btn-home" style="display:none" title="Startseite">
                     <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg>
                 </button>
             </div>
-            <h1 id="page-title">HMC Player</h1>
-            <div style="display:flex;align-items:center;gap:0.75rem;margin-left:auto;">
+            <h1 id="page-title">Bibliotheken</h1>
+            <div class="header-right">
                 <div id="status">Ready</div>
                 <button id="btn-admin" title="Admin" onclick="openAdminPanel()">
                     <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 4l5 2.18V11c0 3.5-2.33 6.79-5 7.93-2.67-1.14-5-4.43-5-7.93V7.18L12 5z"/></svg>
                 </button>
+                <div id="queue-container-target"></div>
             </div>
         </header>
-
         <main id="content"></main>
 
         <footer id="player-controls">
@@ -59,34 +59,27 @@
                     <button id="btn-stop" title="Stopp">
                         <svg viewBox="0 0 24 24" width="28" height="28" fill="currentColor"><path d="M6 6h12v12H6z"/></svg>
                     </button>
-                    <button id="btn-next" title="Nächster">
+                    <button id="btn-next" title="Naechster">
                         <svg viewBox="0 0 24 24" width="28" height="28" fill="currentColor"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg>
                     </button>
                 </div>
                 <div class="player-right">
                     <div class="volume-wrapper">
-                        <button class="volume-btn" onclick="adjustVolume(-5)" title="Leiser">
+                        <button class="volume-btn" id="btn-vol-down" title="Leiser">
                             <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor"><path d="M3 9v6h4l5 5V4L7 9H3z"/><path d="M14 11h8v2h-8z"/></svg>
                         </button>
-                        <input type="range" id="volume-slider" min="0" max="60" value="60">
-                        <button class="volume-btn" onclick="adjustVolume(5)" title="Lauter">
+                        <input type="range" id="volume-slider" min="0" max="100" value="60">
+                        <button class="volume-btn" id="btn-vol-up" title="Lauter">
                             <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor"><path d="M3 9v6h4l5 5V4L7 9H3z"/><path d="M14 11h3v-3h2v3h3v2h-3v3h-2v-3h-3z"/></svg>
                         </button>
                         <span id="volume-value">60%</span>
                     </div>
-                    <div id="queue-container-target"></div>
                 </div>
             </div>
         </footer>
     </div>
-
-    <!-- ================================================
-         ADMIN PANEL MODAL
-         ================================================ -->
     <div id="admin-overlay" class="admin-overlay" style="display:none">
         <div class="admin-modal">
-
-            <!-- PIN-Screen -->
             <div id="admin-pin-screen">
                 <div class="admin-modal-header">
                     <span class="admin-title-icon">🔐</span>
@@ -114,11 +107,10 @@
                 <button class="admin-close-btn" onclick="closeAdminPanel()">Abbrechen</button>
             </div>
 
-            <!-- Settings-Screen -->
             <div id="admin-settings-screen" style="display:none">
                 <div class="admin-modal-header">
                     <span class="admin-title-icon">⚙️</span>
-                    <h2>Einstellungen</h2>
+                    <h2>Plex Einstellungen</h2>
                     <button class="admin-logout-btn" onclick="adminLogout()" title="Abmelden">🔒</button>
                 </div>
 
@@ -126,37 +118,35 @@
                     <button class="admin-tab active" onclick="switchTab('general')">Allgemein</button>
                     <button class="admin-tab" onclick="switchTab('libraries')">Bibliotheken</button>
                     <button class="admin-tab" onclick="switchTab('security')">Sicherheit</button>
-                    <button class="admin-tab" onclick="switchTab('ota')">Update</button>
                 </div>
 
-                <!-- Tab: Allgemein -->
                 <div id="tab-general" class="admin-tab-content">
-                    <label class="admin-label">Gerätename (HA-Anzeigename)
-                        <input type="text" id="set-device-name" class="admin-input" placeholder="z.B. HMC Kinderzimmer">
+                    <label class="admin-label">Geraetename
+                        <input type="text" id="set-device-name" class="admin-input" placeholder="z.B. Plex Kinderzimmer">
                     </label>
-                    <label class="admin-label">Max. Lautstärke (0–100)
-                        <div style="display:flex;align-items:center;gap:1rem;">
-                            <input type="range" id="set-max-volume" min="0" max="100" value="60" style="flex:1">
-                            <span id="set-max-volume-val" style="min-width:3ch;color:var(--accent-color);font-weight:700">60</span>
-                        </div>
+                    <label class="admin-label">Plex URL
+                        <input type="text" id="set-plex-url" class="admin-input" placeholder="http://192.168.178.X:32400">
                     </label>
-                    <label class="admin-label">Jellyfin URL
-                        <input type="text" id="set-jellyfin-url" class="admin-input" placeholder="http://192.168.178.X:8096">
+                    <label class="admin-label">Plex Token
+                        <input type="password" id="set-plex-token" class="admin-input" placeholder="Nur eingeben wenn aendern">
                     </label>
+                    <div id="plex-token-info" class="admin-hint"></div>
                     <label class="admin-label">Audio-Device (ALSA)
                         <input type="text" id="set-audio-device" class="admin-input" placeholder="hw:1,0">
+                    </label>
+                    <label class="admin-label">Max. Lautstaerke (0-100)
+                        <div style="display:flex;align-items:center;gap:1rem;">
+                            <input type="range" id="set-max-volume" min="0" max="100" value="60" style="flex:1">
+                            <span id="set-max-volume-val" style="min-width:3ch;color:var(--accent);font-weight:700">60</span>
+                        </div>
                     </label>
                     <button class="admin-btn-primary" onclick="saveSettings()">Speichern</button>
                 </div>
 
-                <!-- Tab: Bibliotheken -->
                 <div id="tab-libraries" class="admin-tab-content" style="display:none">
-                    <p class="admin-hint">Wähle welche Jellyfin-Bibliotheken für Kinder sichtbar sind. Deaktivierte Bibliotheken erscheinen nicht in der Übersicht.</p>
+                    <p class="admin-hint">Nur aktivierte Plex Bibliotheken werden fuer Kinder sichtbar und abspielbar.</p>
                     <div id="lib-list">
-                        <div class="lib-loading">
-                            <div class="lib-spinner"></div>
-                            Lade Bibliotheken von Jellyfin...
-                        </div>
+                        <div class="lib-loading">Lade Plex Bibliotheken...</div>
                     </div>
                     <button class="admin-btn-primary" id="btn-save-libraries" onclick="saveLibraries()" style="display:none;margin-top:1rem">
                         Auswahl speichern
@@ -164,35 +154,22 @@
                     <p id="lib-save-msg" style="display:none;margin-top:0.5rem;text-align:center;font-size:0.9rem"></p>
                 </div>
 
-                <!-- Tab: Sicherheit -->
                 <div id="tab-security" class="admin-tab-content" style="display:none">
                     <p class="admin-hint">Neuen Admin-PIN setzen (mind. 4 Ziffern)</p>
                     <label class="admin-label">Neuer PIN
                         <input type="password" id="set-new-pin" class="admin-input" placeholder="••••" maxlength="8" inputmode="numeric">
                     </label>
-                    <label class="admin-label">PIN bestätigen
+                    <label class="admin-label">PIN bestaetigen
                         <input type="password" id="set-confirm-pin" class="admin-input" placeholder="••••" maxlength="8" inputmode="numeric">
                     </label>
-                    <button class="admin-btn-primary" onclick="saveNewPin()">PIN ändern</button>
+                    <button class="admin-btn-primary" onclick="saveNewPin()">PIN aendern</button>
                     <p id="pin-change-msg" style="display:none;margin-top:0.5rem;text-align:center;font-size:0.9rem"></p>
                 </div>
 
-                <!-- Tab: OTA Update -->
-                <div id="tab-ota" class="admin-tab-content" style="display:none">
-                    <div id="ota-status-box" class="ota-status-box">
-                        <div class="ota-loading">Lade Git-Status...</div>
-                    </div>
-                    <button class="admin-btn-primary" id="btn-ota-update" onclick="startOtaUpdate()" style="display:none">
-                        🔄 Update installieren
-                    </button>
-                    <div id="ota-log" class="ota-log" style="display:none"></div>
-                </div>
-
-                <button class="admin-close-btn" onclick="closeAdminPanel()">Schließen</button>
+                <button class="admin-close-btn" onclick="closeAdminPanel()">Schliessen</button>
             </div>
         </div>
     </div>
-
-    <script src="/static/app.js?v=2.6"></script>
+    <script src="/static/app.js?v=0.3"></script>
 </body>
 </html>

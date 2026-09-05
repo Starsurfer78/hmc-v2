@@ -3,11 +3,12 @@ HMC Admin API
 =============
 Endpoints für das Admin-Panel (PIN-geschützt im Frontend).
 
-- GET  /admin/settings          Aktuelle Einstellungen lesen
-- POST /admin/settings          Einstellungen speichern
-- POST /admin/verify-pin        PIN prüfen (gibt Token zurück)
-- GET  /admin/ota/status        Git-Status des Repos
-- POST /admin/ota/update        OTA-Update starten (SSE-Stream)
+- GET  /admin/settings                  Aktuelle Einstellungen lesen
+- POST /admin/settings                  Einstellungen speichern
+- POST /admin/verify-pin                PIN prüfen (gibt Token zurück)
+- GET  /admin/jellyfin/libraries        Alle Jellyfin-Bibliotheken mit Aktivierungsstatus
+- GET  /admin/ota/status                Git-Status des Repos
+- POST /admin/ota/update                OTA-Update starten (SSE-Stream)
 """
 
 import asyncio
@@ -19,6 +20,7 @@ import subprocess
 from pathlib import Path
 from typing import Optional
 
+import aiohttp
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -30,20 +32,18 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 # ------------------------------------------------------------
 # Pfade
 # ------------------------------------------------------------
-_BASE_DIR      = Path(__file__).parent.parent          # Projekt-Root
+_BASE_DIR      = Path(__file__).parent.parent
 _SETTINGS_FILE = Path(__file__).parent / "admin_settings.json"
 _VENV_PIP      = _BASE_DIR / "venv" / "bin" / "pip"
 
-# Session-Token (In-Memory, kein persistenter Login nötig)
 _active_token: Optional[str] = None
 
 
 # ------------------------------------------------------------
-# Hilfsfunktionen  (ERST definieren, DANN benutzen)
+# Hilfsfunktionen
 # ------------------------------------------------------------
 
 def _hash_pin(pin: str) -> str:
-    """PBKDF2-Hash des PINs."""
     return hashlib.pbkdf2_hmac("sha256", pin.encode(), b"hmc-salt", 100_000).hex()
 
 
@@ -53,9 +53,8 @@ def _load_settings() -> dict:
             return json.loads(_SETTINGS_FILE.read_text(encoding="utf-8"))
         except Exception:
             pass
-    # Erste Ausführung: Defaults anlegen und speichern
     defaults = {
-        "admin_pin_hash":    _hash_pin("1234"),   # Standard-PIN: 1234
+        "admin_pin_hash":    _hash_pin("1234"),
         "device_name":       "HMC Player",
         "max_volume":        60,
         "allowed_libraries": [],
@@ -74,7 +73,6 @@ def _save_settings(data: dict):
 
 
 def _check_token(token: str):
-    """Wirft 401 wenn Token ungültig."""
     if not _active_token or not secrets.compare_digest(token, _active_token):
         raise HTTPException(401, "Ungültiger oder abgelaufener Token")
 
@@ -108,21 +106,17 @@ class OtaRequest(BaseModel):
 
 @router.post("/verify-pin")
 async def verify_pin(body: PinVerifyRequest):
-    """PIN prüfen. Bei Erfolg: Session-Token zurückgeben."""
     global _active_token
-    settings = _load_settings()
+    s        = _load_settings()
     pin_hash = _hash_pin(body.pin.strip())
-
-    if not secrets.compare_digest(pin_hash, settings.get("admin_pin_hash", "")):
+    if not secrets.compare_digest(pin_hash, s.get("admin_pin_hash", "")):
         raise HTTPException(403, "Falscher PIN")
-
     _active_token = secrets.token_hex(32)
     return {"token": _active_token}
 
 
 @router.get("/settings")
 async def get_settings(token: str):
-    """Einstellungen lesen (PIN-geschützt). PIN-Hash wird nie zurückgegeben."""
     _check_token(token)
     data = _load_settings()
     return {k: v for k, v in data.items() if k != "admin_pin_hash"}
@@ -130,7 +124,6 @@ async def get_settings(token: str):
 
 @router.post("/settings")
 async def save_settings(body: SettingsUpdate):
-    """Einstellungen speichern (PIN-geschützt)."""
     _check_token(body.token)
     data = _load_settings()
 
@@ -151,9 +144,69 @@ async def save_settings(body: SettingsUpdate):
     return {"status": "ok"}
 
 
+@router.get("/jellyfin/libraries")
+async def get_jellyfin_libraries(token: str):
+    """
+    Fragt alle Jellyfin-Bibliotheken live ab und gibt zurück welche
+    aktuell erlaubt (enabled) sind. Wird im Admin-Panel für die
+    Bibliotheks-Auswahl mit Checkboxen verwendet.
+
+    Antwort:
+      [{ "id": "...", "name": "Hörbücher", "type": "books", "enabled": true }, ...]
+    """
+    _check_token(token)
+
+    settings = _load_settings()
+    jellyfin_url = settings.get("jellyfin_url", "").rstrip("/")
+    allowed      = set(settings.get("allowed_libraries", []))
+
+    # Jellyfin-URL aus .env als Fallback (wird beim ersten Start noch nicht
+    # in admin_settings.json stehen)
+    if not jellyfin_url:
+        try:
+            from .config import settings as env_settings
+            jellyfin_url = env_settings.JELLYFIN_URL.rstrip("/")
+        except Exception:
+            pass
+
+    if not jellyfin_url:
+        raise HTTPException(503, "Jellyfin URL nicht konfiguriert")
+
+    # API-Key ermitteln
+    try:
+        from .config import settings as env_settings
+        api_key = env_settings.JELLYFIN_API_KEY
+    except Exception:
+        raise HTTPException(503, "Jellyfin API-Key nicht konfiguriert")
+
+    headers = {"X-Emby-Token": api_key, "Accept": "application/json"}
+
+    try:
+        async with aiohttp.ClientSession(headers=headers) as session:
+            async with session.get(
+                f"{jellyfin_url}/Library/MediaFolders", timeout=aiohttp.ClientTimeout(total=8)
+            ) as resp:
+                if resp.status != 200:
+                    raise HTTPException(502, f"Jellyfin antwortet mit {resp.status}")
+                data = await resp.json()
+    except aiohttp.ClientError as e:
+        raise HTTPException(502, f"Jellyfin nicht erreichbar: {e}")
+
+    libraries = [
+        {
+            "id":      item["Id"],
+            "name":    item["Name"],
+            "type":    item.get("CollectionType", "unknown"),
+            "enabled": item["Id"] in allowed,
+        }
+        for item in data.get("Items", [])
+    ]
+
+    return libraries
+
+
 @router.get("/ota/status")
 async def ota_status(token: str):
-    """Git-Status: aktueller Commit, Branch, ob Updates verfügbar."""
     _check_token(token)
     try:
         def _run(cmd):
@@ -166,7 +219,6 @@ async def ota_status(token: str):
         msg    = _run(["git", "log", "-1", "--pretty=%s"])
         date   = _run(["git", "log", "-1", "--pretty=%ci"])
 
-        # Remote-Stand holen (kurzer Timeout, non-blocking)
         subprocess.run(
             ["git", "fetch", "--quiet"],
             cwd=_BASE_DIR, timeout=10,
@@ -176,13 +228,13 @@ async def ota_status(token: str):
         behind = int(_run(["git", "rev-list", "--count", f"HEAD..origin/{branch}"]))
 
         return {
-            "branch":           branch,
-            "local_commit":     local,
-            "remote_commit":    remote,
-            "commit_message":   msg,
-            "commit_date":      date,
+            "branch":            branch,
+            "local_commit":      local,
+            "remote_commit":     remote,
+            "commit_message":    msg,
+            "commit_date":       date,
             "updates_available": behind > 0,
-            "commits_behind":   behind,
+            "commits_behind":    behind,
         }
     except Exception as e:
         return {"error": str(e), "updates_available": False}
@@ -190,11 +242,6 @@ async def ota_status(token: str):
 
 @router.post("/ota/update")
 async def ota_update(body: OtaRequest):
-    """
-    OTA-Update: git pull → pip install → systemctl restart hmc.
-    Antwortet mit einem Server-Sent-Events-Stream, damit das Frontend
-    den Fortschritt live sehen kann.
-    """
     _check_token(body.token)
 
     async def _stream():
@@ -202,9 +249,8 @@ async def ota_update(body: OtaRequest):
             return f"data: {json.dumps({'text': text, 'level': level})}\n\n"
 
         yield _msg("🔄 Starte OTA-Update...")
-
-        # 1. git pull
         yield _msg("📥 Lade Updates von Git...")
+
         proc = await asyncio.create_subprocess_exec(
             "git", "pull", "--rebase",
             cwd=_BASE_DIR,
@@ -219,7 +265,6 @@ async def ota_update(body: OtaRequest):
             yield _msg("done")
             return
 
-        # 2. pip install -r requirements.txt
         yield _msg("📦 Aktualisiere Python-Pakete...")
         proc = await asyncio.create_subprocess_exec(
             str(_VENV_PIP), "install", "-q", "-r",
@@ -233,7 +278,6 @@ async def ota_update(body: OtaRequest):
         if proc.returncode != 0:
             yield _msg("⚠️  pip install mit Warnungen beendet", "warn")
 
-        # 3. systemctl restart hmc
         yield _msg("🔁 Starte HMC-Service neu...")
         proc = await asyncio.create_subprocess_exec(
             "sudo", "systemctl", "restart", "hmc",

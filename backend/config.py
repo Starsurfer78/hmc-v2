@@ -13,8 +13,9 @@ class Settings(BaseSettings):
     ALLOWED_LIBRARIES: str = ""
 
     # --- MQTT ---
-    # Broker-Adresse des Mosquitto im LAN (IP oder Hostname)
-    MQTT_BROKER: str = "192.168.178.XX"   # <-- anpassen!
+    # Broker-Adresse des Mosquitto im LAN (IP oder Hostname).
+    # Leer = MQTT/Home-Assistant-Anbindung deaktiviert (kein Verbindungsversuch).
+    MQTT_BROKER: str = ""
     MQTT_PORT: int = 1883
     MQTT_USER: str = ""
     MQTT_PASSWORD: str = ""

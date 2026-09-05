@@ -31,6 +31,7 @@ ENV/
 .env
 .env.local
 .env.*.local
+plex_hmc_player/backend/admin_settings.json
 
 # IDEs
 .vscode/
@@ -48,4 +49,3 @@ Thumbs.db
 # Documentation / PRD
 Task.prd
 Projekt.prd
-

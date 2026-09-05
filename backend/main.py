@@ -28,8 +28,11 @@ async def lifespan(app: FastAPI):
         await player.start()
         await asyncio.sleep(1)
 
-    mqtt.on_command = _handle_mqtt_command
-    await mqtt.start()
+    if settings.MQTT_BROKER:
+        mqtt.on_command = _handle_mqtt_command
+        await mqtt.start()
+    else:
+        print("⚠️  MQTT_BROKER nicht konfiguriert – Home-Assistant-Anbindung deaktiviert")
 
     _state_task = asyncio.create_task(_state_push_loop())
 
@@ -37,7 +40,8 @@ async def lifespan(app: FastAPI):
 
     print(f"🛑 HMC v2.1 Stopping...")
     _state_task.cancel()
-    await mqtt.stop()
+    if settings.MQTT_BROKER:
+        await mqtt.stop()
     await player.stop()
     await jellyfin.close()
 
@@ -137,6 +141,11 @@ async def _handle_mqtt_command(command: str):
             await player.next_track()
         elif cmd == "previous":
             await player.previous_track()
+        elif cmd.startswith("volume:"):
+            volume = min(int(cmd.split(":", 1)[1]), get_policy().max_volume)
+            await player.set_volume(volume)
+        elif cmd.startswith("seek:"):
+            await player.seek(float(cmd.split(":", 1)[1]))
         else:
             print(f"⚠️  Unbekanntes MQTT Kommando: {cmd}")
             return
@@ -178,11 +187,12 @@ def _screen_on():
 @app.get("/health")
 def health():
     return {
-        "name":    "HMC v2.1",
-        "backend": "jellyfin",
-        "version": "2.1.0",
-        "status":  "online",
-        "mqtt":    settings.MQTT_DEVICE_ID,
+        "name":          "HMC v2.1",
+        "backend":       "jellyfin",
+        "version":       "2.1.0",
+        "status":        "online",
+        "mqtt":          settings.MQTT_DEVICE_ID,
+        "mqtt_connected": mqtt.is_connected,
     }
 
 @app.get("/")
