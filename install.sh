@@ -82,6 +82,12 @@ EOF
 
 echo "   ✅ Created autostart entry: $AUTOSTART_DIR/hmc.desktop"
 
+# Chromium-Übersetzungs-Popup per Policy abschalten (die --disable-translate-
+# Flags im Kiosk-Skript ignorieren neuere Chromium-Versionen)
+sudo mkdir -p /etc/chromium/policies/managed
+echo '{ "TranslateEnabled": false }' | sudo tee /etc/chromium/policies/managed/hmc.json > /dev/null
+echo "   ✅ Chromium translate policy installed"
+
 # 5. Configuration
 echo "📝 Configuration..."
 if [ ! -f "backend/.env" ]; then

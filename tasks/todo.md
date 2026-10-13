@@ -61,7 +61,7 @@ Groesstenteils umgesetzt am 2026-09-05 (neues `backend/settings_store.py`, nach 
 
 ---
 
-## EPIC B – UI fuer 600x800 (Touch) optimieren
+## EPIC B – UI fuer 7"-Touchscreen (800x480 / 1024x600, Querformat) optimieren
 
 ### B1. Scroll/Tap Konflikte beheben
 - [x] Grid-Cards und Trackliste: Pointer-Bewegungsschwelle ergaenzt (`bindTap` in app.js) — ein Scroll-Wisch loest keinen Tap mehr aus [2026-09-05]
@@ -72,8 +72,12 @@ Groesstenteils umgesetzt am 2026-09-05 (neues `backend/settings_store.py`, nach 
 - [ ] Breadcrumb/Title-Zeile klickbar machen (schneller Sprung nach oben / zurueck)
 - [ ] Optional: "Zurueck zur Bibliothekenliste" als fixe Aktion im Header
 
-### B3. Layout fuer 600x800
-- [ ] CSS Breakpoints fuer 600x800: Kartenanzahl, Abstaende, Schriftgroessen, Footer-Hoehe
+### B3. Layout fuer 7" (Querformat)
+- [x] Kompaktes Layout per `@media (max-height: 600px)`: Header 56px, Player 76px, Album-/Titelansicht, Queue, Menue, PIN und Admin passen ohne Seiten-Scrollen (per Headless-Screenshots bei 800x480 und 1024x600 geprueft) [2026-10-13]
+- [x] Titel-Detail: Buttons vor der Beschreibung, Beschreibung im Kompaktmodus auf 4 Zeilen gekuerzt [2026-10-13]
+- [x] Album-Cover sass durch doppeltes sticky-Offset zu tief (auch im grossen Layout) [2026-10-13]
+- [x] Chromium-Uebersetzungs-Popup: notranslate-Meta + Policy in install.sh [2026-10-13]
+- [ ] Auf dem echten Geraet verifizieren
 - [x] Player-Leiste: Vor/Stopp/Weiter- und Lautstaerke-Buttons auf 44px Touch-Ziel vergroessert [2026-09-05] — Progress/Seek-Bedienbarkeit nicht weiter angefasst
 - [x] Header-Titel bei langen Namen: einzeilige Kuerzung mit Ellipsis statt Umbruch/Abschneiden am oberen Rand [2026-09-05]
 - [ ] Queue-Overlay und Admin-Modal: scrollbare Container sauber (kein Scroll-Lock) — nicht weiter untersucht
@@ -134,7 +138,7 @@ Groesstenteils umgesetzt am 2026-09-05 (neues `backend/settings_store.py`, nach 
 
 ## Verifikation (Definition of Done pro EPIC)
 - [ ] Admin: Aenderungen wirken ohne manuelles Editieren von `.env`
-- [ ] UI: Bedienbar auf 600x800 ohne Fehlklicks beim Scrollen
+- [ ] UI: Bedienbar auf 7" (800x480 / 1024x600) ohne Fehlklicks beim Scrollen
 - [ ] Jellyfin: Alle erwarteten Artists/Albums sichtbar (keine Limitierung durch API-Paging)
 - [ ] Plex: Funktionalitaet fuer Kinder und Eltern entspricht dem Jellyfin Player im Alltag
 - [ ] Plex: Browse, Queue, Player-State, Cover, Seek und Lautstaerke verhalten sich gleichwertig

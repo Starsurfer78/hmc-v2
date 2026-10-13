@@ -327,21 +327,25 @@ function openTrack(index) {
     const imgHtml = imageUrl
         ? `<img src="${imageUrl}" alt="${track.name}" onclick="playAlbumFromTrack('${currentAlbum.id}','${track.id}')" style="cursor:pointer" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"><div class="album-placeholder" style="display:none">🎵</div>`
         : `<div class="album-placeholder">🎵</div>`;
+    // Buttons vor der Beschreibung: lange Hörbuch-Texte sollen die
+    // Bedienung nicht aus dem sichtbaren Bereich schieben.
     content.innerHTML = `
-        <div class="album-detail"><div class="album-header">
-            ${imgHtml}
-            <h2>${track.name}</h2>
-            <div style="color:rgba(255,255,255,0.9);margin-bottom:1rem;display:flex;align-items:center;justify-content:center;gap:8px;font-size:1.1rem;">
-                <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z"/></svg>
-                <span>Dauer: ${formatDuration(track.duration)} Min.</span>
+        <div class="track-detail">
+            <div class="track-detail-cover">${imgHtml}</div>
+            <div class="track-detail-info">
+                <h2>${track.name}</h2>
+                <div class="track-detail-duration">
+                    <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z"/></svg>
+                    <span>Dauer: ${formatDuration(track.duration)} Min.</span>
+                </div>
+                <div class="track-detail-actions">
+                    <button class="btn-secondary" onclick="playAlbumFromTrack('${currentAlbum.id}','${track.id}')">
+                        <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>AB HIER SPIELEN</button>
+                    <button class="btn-secondary" onclick="showTrackMenu(currentTracks[${index}],'${currentAlbum.id}')">Mehr Optionen</button>
+                </div>
+                ${track.overview ? `<div class="track-detail-overview">${track.overview}</div>` : ''}
             </div>
-            ${track.overview ? `<div style="max-width:600px;margin-bottom:2rem;line-height:1.5;color:#ddd;">${track.overview}</div>` : ''}
-            <div style="display:flex;gap:1rem;justify-content:center;width:100%;margin-top:1rem;">
-                <button class="btn-secondary" onclick="playAlbumFromTrack('${currentAlbum.id}','${track.id}')">
-                    <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor" style="margin-right:8px;vertical-align:middle"><path d="M8 5v14l11-7z"/></svg>AB HIER SPIELEN</button>
-                <button class="btn-secondary" onclick="showTrackMenu(currentTracks[${index}],'${currentAlbum.id}')">Mehr Optionen</button>
-            </div>
-        </div></div>`;
+        </div>`;
 }
 
 function renderTracklist(album, tracks) {
@@ -595,6 +599,7 @@ let _adminToken = null;
 
 function openAdminPanel() {
     _adminPin = ''; _adminToken = null;
+    document.querySelector('.admin-modal').classList.remove('admin-modal-wide');
     document.getElementById('admin-overlay').style.display = 'flex';
     document.getElementById('admin-pin-screen').style.display      = 'block';
     document.getElementById('admin-settings-screen').style.display = 'none';
@@ -642,6 +647,8 @@ async function _tryPin() {
 }
 
 async function _openSettings() {
+    // Einstellungen bekommen mehr Breite (im kompakten Layout zweispaltig)
+    document.querySelector('.admin-modal').classList.add('admin-modal-wide');
     document.getElementById('admin-pin-screen').style.display      = 'none';
     document.getElementById('admin-settings-screen').style.display = 'block';
     switchTab('general');
@@ -714,7 +721,8 @@ function switchTab(name) {
         t.classList.toggle('active', _TAB_NAMES[i] === name);
     });
     _TAB_NAMES.forEach(t => {
-        document.getElementById(`tab-${t}`).style.display = t === name ? 'block' : 'none';
+        // '' statt 'block': Anzeige-Art kommt aus dem CSS (kompaktes Layout nutzt Grid)
+        document.getElementById(`tab-${t}`).style.display = t === name ? '' : 'none';
     });
     if (name === 'libraries') _loadJellyfinLibraries();
     if (name === 'ota')       _loadOtaStatus();

@@ -112,6 +112,7 @@ MQTT_DEVICE_NAME=HMC Kinderzimmer
 - Lifespan: `jellyfin.start()` → `admin.bind_runtime(jellyfin, player)` → `player.start()` (nicht im Mock) → `mqtt.start()` (nur wenn `MQTT_BROKER` gesetzt) → `_state_push_loop()`
 - `_state_push_loop()`: State-Push alle 5 s; `_push_state()`: sofort nach jeder REST-/MQTT-Aktion
 - `_handle_mqtt_command()`: `pause`, `resume`/`play`, `stop`, `play_pause`, `next`, `previous`, `volume:<n>` (auf Max-Volume geclampt), `seek:<s>`
+- Frontend: `<meta name="google" content="notranslate">` + `translate="no"` unterdrücken Chromiums Übersetzungs-Popup; `install.sh` setzt zusätzlich die Policy `TranslateEnabled=false`. Bei CSS/JS-Änderungen den `?v=`-Cache-Buster in `index.html` erhöhen.
 - Bildschirm: `/screen/off` und `/screen/on` rufen `xset dpms force off/on` (nur X11 auf dem Pi). Play/Resume schaltet den Screen automatisch an. Das Timeout selbst steuert das Frontend (`SCREEN_TIMEOUT_MS` in `app.js`).
 - Policy-Prüfung (`allowed_libraries`) passiert aktuell nur in `/libraries` und `/library/{id}/artists` — Album-/Track-/Play-Endpoints prüfen nicht.
 
@@ -225,7 +226,7 @@ Update bestehender Installation: Admin-Panel → Tab „Update“ (OTA) oder man
 | Komponente | Spezifikation |
 |---|---|
 | SBC | Raspberry Pi 3B+ oder 4 |
-| Display | 7" Touchscreen, Zielauflösung für das UI-Layout: 600×800 |
+| Display | 7" Touchscreen im Querformat (800×480 bzw. 1024×600) — kompaktes Layout per `@media (max-height: 600px)` am Ende von `styles.css` |
 | Audio | USB-DAC Behringer UCA222 → Cinch (`hw:1,0`) |
 | OS | Raspberry Pi OS Bookworm (64-bit empfohlen) |
 
@@ -259,7 +260,7 @@ Update bestehender Installation: Admin-Panel → Tab „Update“ (OTA) oder man
 
 - **F – HA:** End-to-End-Test der Custom Component; Automationen (Pause bei TTS, Nachtmodus-Stop) existieren noch nicht
 - **A – Admin:** MQTT-Tab, Eingabevalidierung, Jellyfin-/MQTT-Test-Endpoints
-- **B – UI 600×800:** Layout passt noch nicht (zu groß, Scrollen nötig), Navigation/Startscreen
+- **B – UI 7":** Kompaktes Layout umgesetzt (2026-10-13); offen: Navigation/Startscreen, Test auf echtem Gerät
 - **C – Jellyfin:** Paging für Artists/Albums/Tracks
 - **D/E – Plex:** Evaluation und Ausbau des separaten Players
 
