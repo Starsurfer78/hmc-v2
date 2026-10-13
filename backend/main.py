@@ -124,7 +124,10 @@ async def _state_push_loop():
         await asyncio.sleep(5)
 
 async def _handle_mqtt_command(command: str):
-    cmd = command.strip().lower()
+    raw = command.strip()
+    # Nur den Befehlsnamen normalisieren — das Argument kann eine URL sein
+    name, sep, arg = raw.partition(":")
+    cmd = name.lower() + sep + arg if name.lower() in ("play_url", "announce") else raw.lower()
     try:
         if cmd == "pause":
             await player.pause()
@@ -149,6 +152,16 @@ async def _handle_mqtt_command(command: str):
             await player.set_volume(volume)
         elif cmd.startswith("seek:"):
             await player.seek(float(cmd.split(":", 1)[1]))
+        elif cmd.startswith("play_url:"):
+            # Beliebige URL aus HA abspielen (ersetzt die Warteschlange)
+            await player.play_now({
+                "id": "ha_media", "name": "Home Assistant", "url": arg,
+                "duration": 0, "image": None,
+            })
+            _screen_on()
+        elif cmd.startswith("announce:"):
+            # Durchsage (z.B. TTS): unterbricht und setzt danach fort
+            await player.announce(arg)
         else:
             print(f"⚠️  Unbekanntes MQTT Kommando: {cmd}")
             return
@@ -200,7 +213,12 @@ def health():
 
 @app.get("/")
 async def root():
-    return FileResponse(os.path.join(frontend_dir, "index.html"))
+    # no-cache: Der Kiosk-Chromium soll index.html nach einem Update immer neu
+    # laden; CSS/JS werden über den ?v=-Cache-Buster darin versioniert.
+    return FileResponse(
+        os.path.join(frontend_dir, "index.html"),
+        headers={"Cache-Control": "no-cache"},
+    )
 
 @app.get("/libraries", response_model=List[Library])
 async def get_libraries(user_id: Optional[str] = None):

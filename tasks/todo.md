@@ -15,7 +15,9 @@ Component. Details siehe `tasks/lessons.md`.
 - [x] `backend/mqtt_client.py`: totes Discovery-Publish entfernt
 - [x] `setup.py`: MQTT-Konfiguration inkl. Verbindungstest im Setup-Wizard ergaenzt
 - [x] `custom_components/hmc_media_player/`: eigene HA-Integration (Config Flow + MediaPlayerEntity)
-- [ ] Custom Component in echter HA-Instanz installieren und End-to-End testen (Play/Pause/Volume/Seek, Cover, Availability)
+- [x] Custom Component in echter HA-Instanz installiert, Steuerung (Play/Pause/Volume) funktioniert [2026-10-13]
+- [x] TTS/Durchsagen: `play_media` + `MEDIA_ANNOUNCE` in der Component, `announce:`/`play_url:` in HMC (Fortsetzung nach Durchsage) [2026-10-13]
+- [ ] TTS-Durchsage am echten Geraet testen (inkl. Fortsetzung aus Wiedergabe und Pause)
 - [ ] Automationen `hmc_pause_bei_tts` / `hmc_nachtmodus_stop` (in CLAUDE.md erwaehnt, real nie angelegt) gegen die neue `media_player`-Entitaet bauen
 - [ ] Optional: Zeroconf-Advertising in HMC + Zeroconf-Matcher in der Custom Component fuer automatische HA-Discovery ohne manuelle Geraete-ID-Eingabe
 

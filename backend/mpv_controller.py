@@ -45,7 +45,12 @@ class MpvController:
         
         self.duration = 0.0
         self.position = 0.0
-        
+
+        # Durchsagen (HA-TTS): laufende Durchsage + was danach fortgesetzt wird
+        self._announcement: Optional[dict] = None
+        # Nach dem Laden eines Tracks anzuwenden: {"position": float, "paused": bool}
+        self._pending_resume: Optional[dict] = None
+
         # Callbacks for state changes (optional)
         self.on_state_change: Optional[Callable[[PlaybackState], None]] = None
         self.on_track_change: Optional[Callable[[dict], None]] = None
@@ -350,6 +355,9 @@ class MpvController:
         # gesetzt — schlägt das Laden fehl, zeigt die UI sonst kurz
         # "Wiedergabe", obwohl nie etwas gespielt hat.
         url = current_track['url']
+        # Ein neu geladener Track beendet jede laufende Durchsage
+        self._announcement = None
+        self._pending_resume = None
         self.position = 0.0
         self.state = PlaybackState.LOADING
         await self._send_command(["loadfile", url, "replace"])
@@ -418,9 +426,55 @@ class MpvController:
             self.clear_queue()
             return
         
+        self._announcement = None
+        self._pending_resume = None
         await self._send_command(["stop"])
         self.state = PlaybackState.STOPPED
         self.clear_queue()
+
+    async def announce(self, url: str):
+        """
+        Spielt eine Durchsage (z.B. Home-Assistant-TTS) und setzt danach die
+        vorherige Wiedergabe an derselben Stelle fort (inkl. Pause-Zustand).
+        Die Warteschlange bleibt unverändert.
+        """
+        if self.audio_device == "mock":
+            print(f"MOCK PLAYER: Durchsage {url}")
+            return
+
+        # Bei einer Durchsage während einer Durchsage gilt weiter der
+        # ursprüngliche Fortsetzungspunkt
+        if self._announcement is not None:
+            resume = self._announcement["resume"]
+        elif self.get_current_track() and self.state in (
+            PlaybackState.PLAYING, PlaybackState.PAUSED, PlaybackState.LOADING
+        ):
+            resume = {
+                "index": self.current_track_index,
+                "position": self.position,
+                "paused": self.state == PlaybackState.PAUSED,
+            }
+        else:
+            resume = None
+
+        self._pending_resume = None
+        self._announcement = {"resume": resume}
+        self.state = PlaybackState.LOADING
+        await self._send_command(["loadfile", url, "replace"])
+        await self._send_command(["set_property", "pause", False])
+
+    async def _finish_announcement(self):
+        """Durchsage beendet (oder fehlgeschlagen): vorherige Wiedergabe fortsetzen."""
+        resume = self._announcement["resume"] if self._announcement else None
+        self._announcement = None
+        if not resume or not (0 <= resume["index"] < len(self.playback_queue)):
+            self.state = PlaybackState.IDLE
+            return
+        self.current_track_index = resume["index"]
+        await self._play_current_track()
+        # Erst nach "file-loaded" spulen/pausieren (Event-Verarbeitung läuft
+        # seriell im IPC-Loop, das Event kann nicht vorher eintreffen)
+        self._pending_resume = {"position": resume["position"], "paused": resume["paused"]}
 
     async def seek(self, position: float):
         """Seek to absolute position"""
@@ -569,13 +623,20 @@ class MpvController:
                 if value is True and self.state != PlaybackState.ERROR:
                     self.state = PlaybackState.IDLE
             elif name == "eof-reached":
-                if value is True:
+                # Ende einer Durchsage wird über "end-file" behandelt
+                if value is True and self._announcement is None:
                     # ⭐ Track ended - auto-advance to next
                     print(f"Track {self.current_track_index} ended")
                     await self.next_track()
 
         elif evt_name == "file-loaded":
             self.state = PlaybackState.PLAYING
+            if self._pending_resume:
+                resume, self._pending_resume = self._pending_resume, None
+                if resume["position"] > 1:
+                    await self._send_command(["seek", str(resume["position"]), "absolute"])
+                if resume["paused"]:
+                    await self._send_command(["set_property", "pause", True])
 
         elif evt_name == "log-message":
             prefix = event.get("prefix", "")
@@ -588,6 +649,12 @@ class MpvController:
 
         elif evt_name == "end-file":
             reason = event.get("reason")
+            # "stop" = der unterbrochene Track bzw. ein loadfile-Ersatz → ignorieren
+            if self._announcement is not None and reason in ("eof", "error"):
+                if reason == "error":
+                    print(f"❌ Durchsage konnte nicht abgespielt werden: {event.get('file_error')}")
+                await self._finish_announcement()
+                return
             if reason == "error":
                 print(f"❌ Track {self.current_track_index} konnte nicht abgespielt werden: {event.get('file_error')}")
                 self.state = PlaybackState.ERROR

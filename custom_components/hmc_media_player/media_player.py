@@ -4,12 +4,16 @@ from __future__ import annotations
 
 import json
 import logging
+from typing import Any
 
-from homeassistant.components import mqtt
+from homeassistant.components import media_source, mqtt
 from homeassistant.components.media_player import (
+    ATTR_MEDIA_ANNOUNCE,
     MediaPlayerEntity,
     MediaPlayerEntityFeature,
     MediaPlayerState,
+    MediaType,
+    async_process_play_media_url,
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
@@ -39,6 +43,8 @@ _SUPPORTED_FEATURES = (
     | MediaPlayerEntityFeature.PREVIOUS_TRACK
     | MediaPlayerEntityFeature.VOLUME_SET
     | MediaPlayerEntityFeature.SEEK
+    | MediaPlayerEntityFeature.PLAY_MEDIA
+    | MediaPlayerEntityFeature.MEDIA_ANNOUNCE
 )
 
 
@@ -121,3 +127,21 @@ class HmcMediaPlayer(MediaPlayerEntity):
 
     async def async_media_seek(self, position: float) -> None:
         await self._publish(f"seek:{position}")
+
+    async def async_play_media(
+        self, media_type: MediaType | str, media_id: str, **kwargs: Any
+    ) -> None:
+        # tts.speak liefert eine media-source-ID (und announce=True), keine URL
+        if media_source.is_media_source_id(media_id):
+            play_item = await media_source.async_resolve_media(
+                self.hass, media_id, self.entity_id
+            )
+            media_id = play_item.url
+        # Relative HA-Pfade (z.B. /api/tts_proxy/...) in eine für HMC
+        # erreichbare absolute URL umwandeln
+        url = async_process_play_media_url(self.hass, media_id)
+
+        # announce: HMC unterbricht kurz und setzt danach die vorherige
+        # Wiedergabe fort; sonst ersetzt die URL die Warteschlange
+        command = "announce" if kwargs.get(ATTR_MEDIA_ANNOUNCE) else "play_url"
+        await self._publish(f"{command}:{url}")

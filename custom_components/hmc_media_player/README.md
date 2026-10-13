@@ -36,3 +36,30 @@ eine reguläre `MediaPlayerEntity` bereit.
 
 Für mehrere HMC-Player im Haus die Integration mehrfach hinzufügen (eine
 Geräte-ID pro HMC-Instanz).
+
+## Durchsagen (TTS) und Medien-URLs
+
+Ab Version 1.1.0 unterstützt die Entität `media_player.play_media` inkl.
+Durchsagen. Beispiel:
+
+```yaml
+action: tts.speak
+target:
+  entity_id: tts.google_translate_de_de   # bzw. eure TTS-Engine
+data:
+  media_player_entity_id: media_player.hmc_kinderzimmer
+  message: "Das Abendessen ist fertig!"
+```
+
+- `tts.speak` sendet automatisch als **Durchsage**: HMC unterbricht die
+  laufende Wiedergabe, spielt die Ansage und setzt danach an derselben Stelle
+  fort (auch im Pause-Zustand). Die Warteschlange bleibt erhalten.
+- `media_player.play_media` ohne `announce` spielt die URL stattdessen als
+  normale Wiedergabe ab und ersetzt die Warteschlange.
+- Die Lautstärke ist die aktuelle HMC-Lautstärke (begrenzt durch die
+  Max-Lautstärke aus dem HMC-Admin-Panel).
+- HA übergibt HMC eine absolute URL zu seinem TTS-Proxy. Dafür muss unter
+  **Einstellungen → System → Netzwerk** eine *lokale* Home-Assistant-URL
+  eingetragen sein, die der HMC-Pi erreicht (z.B. `http://192.168.178.10:8123`).
+  Sonst kann HMC die Ansage nicht laden — im HMC-Journal erscheint dann
+  `Durchsage konnte nicht abgespielt werden`.

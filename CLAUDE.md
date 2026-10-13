@@ -111,7 +111,7 @@ MQTT_DEVICE_NAME=HMC Kinderzimmer
 - Modul-Ebene: `JellyfinClient()`, `MqttClient()`, `MpvController(audio_device, max_volume)` aus dem Settings-Store. Auf Windows (`sys.platform == "win32"`) wird `audio_device` auf `"mock"` gesetzt.
 - Lifespan: `jellyfin.start()` → `admin.bind_runtime(jellyfin, player)` → `player.start()` (nicht im Mock) → `mqtt.start()` (nur wenn `MQTT_BROKER` gesetzt) → `_state_push_loop()`
 - `_state_push_loop()`: State-Push alle 5 s; `_push_state()`: sofort nach jeder REST-/MQTT-Aktion
-- `_handle_mqtt_command()`: `pause`, `resume`/`play`, `stop`, `play_pause`, `next`, `previous`, `volume:<n>` (auf Max-Volume geclampt), `seek:<s>`
+- `_handle_mqtt_command()`: `pause`, `resume`/`play`, `stop`, `play_pause`, `next`, `previous`, `volume:<n>` (auf Max-Volume geclampt), `seek:<s>`, `play_url:<url>` (ersetzt Queue), `announce:<url>` (Durchsage, danach Fortsetzung). Nur der Befehlsname wird kleingeschrieben — URLs bleiben unverändert.
 - Frontend: `<meta name="google" content="notranslate">` + `translate="no"` unterdrücken Chromiums Übersetzungs-Popup; `install.sh` setzt zusätzlich die Policy `TranslateEnabled=false`. Bei CSS/JS-Änderungen den `?v=`-Cache-Buster in `index.html` erhöhen.
 - Bildschirm: `/screen/off` und `/screen/on` rufen `xset dpms force off/on` (nur X11 auf dem Pi). Play/Resume schaltet den Screen automatisch an. Das Timeout selbst steuert das Frontend (`SCREEN_TIMEOUT_MS` in `app.js`).
 - Policy-Prüfung (`allowed_libraries`) passiert aktuell nur in `/libraries` und `/library/{id}/artists` — Album-/Track-/Play-Endpoints prüfen nicht.
@@ -131,6 +131,7 @@ MQTT_DEVICE_NAME=HMC Kinderzimmer
   - Auto-Advance: MPV-Property `eof-reached == true` → `next_track()`
 - Eigene Queue: `playback_queue: List[dict]` + `current_track_index`; MPV bekommt immer nur `loadfile <url> replace`
 - `stop()` beendet den Prozess; `stop_playback()` stoppt nur Wiedergabe + leert Queue
+- `announce(url)`: merkt Index/Position/Pause, spielt die Durchsage; `end-file` (eof/error) → `_finish_announcement()` lädt den Track neu, Seek/Pause werden nach `file-loaded` über `_pending_resume` angewendet. `_play_current_track()`/`stop_playback()` verwerfen eine laufende Durchsage.
 - `_monitor_process()` startet nach MPV-Absturz den aktuellen Track neu
 - Mock-Mode: `if self.audio_device == "mock":` vor jedem IPC-Call
 
@@ -152,7 +153,7 @@ MQTT_DEVICE_NAME=HMC Kinderzimmer
 ### `custom_components/hmc_media_player/` – Home-Assistant-Integration
 - Config Flow: pro Gerät `device_id` + Name eintragen; abonniert State/Availability, publiziert Commands
 - HA-States: playing / paused / buffering (`loading`) / idle (`idle`, `stopped`, `error`)
-- Features: Play, Pause, Stop, Next, Previous, Volume-Set, Seek
+- Features: Play, Pause, Stop, Next, Previous, Volume-Set, Seek, Play-Media + Announce (TTS via `tts.speak`; media-source-IDs werden in HA aufgelöst und per `async_process_play_media_url` zu absoluten URLs)
 - Installation/Einrichtung: `custom_components/hmc_media_player/README.md`
 
 ### `plex_hmc_player/` – Plex-Variante
