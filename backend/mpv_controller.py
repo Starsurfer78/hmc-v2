@@ -1,11 +1,15 @@
 import asyncio
 import json
+import re
 import socket
 import subprocess
 import sys
 from enum import Enum
 from pathlib import Path
 from typing import Optional, List, Callable, Dict, Any
+
+# Maskiert den Jellyfin-API-Key in Stream-URLs, bevor MPV-Logs ins Journal gehen
+_API_KEY_RE = re.compile(r"((?:api_key|ApiKey)=)[^&\s\"]+")
 
 class PlaybackState(str, Enum):
     IDLE = "idle"
@@ -342,12 +346,14 @@ class MpvController:
             self.state = PlaybackState.PLAYING
             return
         
-        # Load track in MPV
+        # Load track in MPV. PLAYING wird erst mit dem MPV-Event "file-loaded"
+        # gesetzt — schlägt das Laden fehl, zeigt die UI sonst kurz
+        # "Wiedergabe", obwohl nie etwas gespielt hat.
         url = current_track['url']
+        self.position = 0.0
+        self.state = PlaybackState.LOADING
         await self._send_command(["loadfile", url, "replace"])
         await self._send_command(["set_property", "pause", False])
-        
-        self.state = PlaybackState.PLAYING
         
         # Trigger callback if set
         if self.on_track_change:
@@ -508,7 +514,10 @@ class MpvController:
                     '{"command": ["observe_property", 3, "duration"]}\n',
                     '{"command": ["observe_property", 4, "playlist-pos"]}\n',
                     '{"command": ["observe_property", 5, "idle-active"]}\n',
-                    '{"command": ["observe_property", 6, "eof-reached"]}\n'
+                    '{"command": ["observe_property", 6, "eof-reached"]}\n',
+                    # MPV-Warnungen/Fehler als log-message-Events empfangen
+                    # (MPVs stdout/stderr werden verworfen)
+                    '{"command": ["request_log_messages", "warn"]}\n'
                 ]
                 for obs in observers:
                     writer.write(obs.encode())
@@ -556,7 +565,8 @@ class MpvController:
                 # MPV's internal playlist position changed
                 pass
             elif name == "idle-active":
-                if value is True:
+                # ERROR bleibt sichtbar, bis neu abgespielt oder gestoppt wird
+                if value is True and self.state != PlaybackState.ERROR:
                     self.state = PlaybackState.IDLE
             elif name == "eof-reached":
                 if value is True:
@@ -564,9 +574,22 @@ class MpvController:
                     print(f"Track {self.current_track_index} ended")
                     await self.next_track()
 
+        elif evt_name == "file-loaded":
+            self.state = PlaybackState.PLAYING
+
+        elif evt_name == "log-message":
+            prefix = event.get("prefix", "")
+            text = _API_KEY_RE.sub(r"\1***", event.get("text", "").rstrip())
+            # Harmlos: kurzlebige _send_command-Verbindungen sind schon zu,
+            # wenn MPV noch ein Event an sie schicken will
+            if prefix.startswith("ipc_") and "Broken pipe" in text:
+                return
+            print(f"MPV [{event.get('level')}] {prefix}: {text}")
+
         elif evt_name == "end-file":
             reason = event.get("reason")
             if reason == "error":
+                print(f"❌ Track {self.current_track_index} konnte nicht abgespielt werden: {event.get('file_error')}")
                 self.state = PlaybackState.ERROR
             elif reason == "eof":
                 # End of file reached, next_track will be called via eof-reached

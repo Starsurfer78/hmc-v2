@@ -129,8 +129,13 @@ class JellyfinClient:
         ]
     
     def get_stream_url(self, item_id: str) -> str:
-        """Generate stream URL"""
-        return f"{self.url}/Audio/{item_id}/stream.mp3?api_key={self.api_key}"
+        """
+        Generate stream URL (Direct Play der Originaldatei).
+        MPV dekodiert alle gängigen Formate selbst; erzwungenes MP3-Transcoding
+        (`stream.mp3`) belastet nur den Server und scheitert dort mit HTTP 500,
+        sobald Jellyfins ffmpeg-Transcoding nicht funktioniert.
+        """
+        return f"{self.url}/Audio/{item_id}/stream?static=true&api_key={self.api_key}"
     
     def get_image_url(self, item_id: str, image_type: str = "Primary") -> Optional[str]:
         """Generate image URL"""
